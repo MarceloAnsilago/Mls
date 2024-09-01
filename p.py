@@ -8,9 +8,12 @@ import base64
 import re
 import os
 from datetime import datetime, timedelta
+from PIL import Image
+
+
 # Configurações da Página
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
-
+logo_image = Image.open("logos/LogoApp.jpg")
 
 # Função para abrir a conexão com o banco de dados
 def get_connection():
@@ -95,11 +98,13 @@ def carregar_icone(ticker):
 
 # Menu Lateral
 with st.sidebar:
+    st.image(logo_image, use_column_width=True)  # Exibir a imagem no menu lateral
     selected = option_menu(
-        "Menu Principal", ["Página Inicial", "Cotações"],
-        icons=["house", "currency-exchange"],
-        menu_icon="cast",
-        default_index=0,
+        menu_title="Menu Principal",  # required
+        options=["Página Inicial", "Cotações"],  # required
+        icons=["house", "currency-exchange"],  # ícones (house para página inicial, currency-exchange para cotações)
+        menu_icon="cast",  # ícone do menu
+        default_index=0,  # seleciona a aba 'Página Inicial'
     )
 
 # Página Inicial
