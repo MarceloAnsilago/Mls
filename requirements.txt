@@ -1,7 +1,7 @@
 pip>=24.2
 setuptools>=68.0.0
 wheel>=0.44.0
-numpy==1.24.0
+numpy==1.25.0
 pandas==2.0.3
 streamlit==1.37.0
 streamlit-aggrid==1.0.5
