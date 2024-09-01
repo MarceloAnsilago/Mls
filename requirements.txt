@@ -24,3 +24,4 @@ streamlit-vertical-slider==2.5.5
 webdriver-manager==4.0.2
 yfinance==0.2.28
 cython>=3.0.0
+distutils
