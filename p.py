@@ -5,11 +5,11 @@ from streamlit_option_menu import option_menu
 from st_aggrid import AgGrid, GridOptionsBuilder
 import yfinance as yf
 import base64
-import re
 import os
 from datetime import datetime, timedelta
 from PIL import Image
-
+from statsmodels.tsa.stattools import coint
+import numpy as np
 
 # Configurações da Página
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
@@ -21,7 +21,7 @@ def get_connection():
     return conn
 
 # Função para atualizar cotações
-def atualizar_cotacoes():
+def atualizar_cotações():
     with st.spinner('Atualizando cotações...'):
         conn = get_connection()
         cursor = conn.cursor()
@@ -57,7 +57,7 @@ def atualizar_cotacoes():
 
 # Adicionar um botão para atualização
 if st.button("Atualizar Cotações"):
-    atualizar_cotacoes()
+    atualizar_cotações()
 
 # Função para carregar as cotações mais recentes
 def carregar_acoes():
@@ -95,14 +95,51 @@ def carregar_icone(ticker):
         print(f"Imagem não encontrada para: {ticker_base}")
         return None
 
+# Função para encontrar pares cointegrados e calcular z-score
+def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower):
+    n = data.shape[1]
+    keys = data.keys()
+    pairs = []
+    pvalues = []
+    zscores = []
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            S1 = data[keys[i]]
+            S2 = data[keys[j]]
+            score, pvalue, _ = coint(S1, S2)
+            
+            if pvalue < 0.05:
+                ratios = S1 / S2
+                zscore = (ratios - ratios.mean()) / ratios.std()
+                
+                # Filtrar pelos limites de z-score
+                if zscore.iloc[-1] > zscore_threshold_upper or zscore.iloc[-1] < zscore_threshold_lower:
+                    pairs.append((keys[i], keys[j]))
+                    pvalues.append(pvalue)
+                    zscores.append(zscore.iloc[-1])
+
+    return pairs, pvalues, zscores
+
+# Função para carregar todas as cotações do banco de dados
+def carregar_todas_cotacoes():
+    conn = get_connection()
+    query = """
+    SELECT data, ticker, fechamento 
+    FROM cotacoes 
+    ORDER BY data DESC
+    """
+    cotacoes_df = pd.read_sql(query, conn)
+    conn.close()
+    return cotacoes_df
 
 # Menu Lateral
 with st.sidebar:
     st.image(logo_image, use_column_width=True)  # Exibir a imagem no menu lateral
     selected = option_menu(
         menu_title="Menu Principal",  # required
-        options=["Página Inicial", "Cotações"],  # required
-        icons=["house", "currency-exchange"],  # ícones (house para página inicial, currency-exchange para cotações)
+        options=["Página Inicial", "Cotações", "Análise"],  # required
+        icons=["house", "currency-exchange", "graph-up-arrow"],  # ícones para cada página
         menu_icon="cast",  # ícone do menu
         default_index=0,  # seleciona a aba 'Página Inicial'
     )
@@ -211,3 +248,68 @@ if selected == "Cotações":
         AgGrid(cotacoes_pivot.reset_index(), gridOptions=gridOptions, enable_enterprise_modules=True)
     else:
         st.write("Nenhuma cotação disponível ainda.")
+
+# Página de Análise
+if selected == "Análise":
+    st.title("Análise de Cointegração de Ações")
+
+    # Seleção de parâmetros para análise
+    with st.form(key='analysis_form'):
+        numero_periodos = st.number_input("Número de Períodos para Análise", min_value=1, value=120, help="Número de períodos (mais recentes) para considerar na análise de cointegração.")
+        zscore_threshold_upper = st.number_input("Limite Superior do Z-Score", value=2.0)
+        zscore_threshold_lower = st.number_input("Limite Inferior do Z-Score", value=-2.0)
+        submit_button = st.form_submit_button(label="Analisar Pares Cointegrados")
+
+    if submit_button:
+        cotacoes_df = carregar_todas_cotacoes()
+
+        # Transformar os dados em um formato adequado para a cointegração
+        cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
+
+        # Selecionar os últimos `numero_periodos` (mais recentes)
+        cotacoes_pivot = cotacoes_pivot.tail(numero_periodos)
+
+        # Verificar o número de períodos que realmente foram selecionados
+        numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
+        st.write(f"Número de períodos selecionados para análise: {numero_de_periodos_selecionados}")
+
+        # Encontrar os pares cointegrados e calcular z-scores
+        pairs, pvalues, zscores = find_cointegrated_pairs(cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower)
+
+        if pairs:
+            # Criar DataFrame para exibir os resultados
+            resultados_df = pd.DataFrame({
+                'Pair': [f"{pair[0]} - {pair[1]}" for pair in pairs],
+                'p-value': pvalues,
+                'Z-Score': zscores,
+                'Selecionar': [False] * len(pairs)  # Checkbox inicializando como False
+            })
+
+            st.subheader("Pares Cointegrados Encontrados (Z-Score fora dos limites):")
+            
+            # Configurando a grade (grid) com st-aggrid
+            gb = GridOptionsBuilder.from_dataframe(resultados_df)
+            gb.configure_pagination(paginationAutoPageSize=True)
+            gb.configure_side_bar()
+            gb.configure_selection(selection_mode="multiple", use_checkbox=True)
+            gridOptions = gb.build()
+            
+            grid_response = AgGrid(
+                resultados_df,
+                gridOptions=gridOptions,
+                enable_enterprise_modules=True,
+                update_mode="MODEL_CHANGED",
+                allow_unsafe_jscode=True,
+                fit_columns_on_grid_load=True,
+            )
+
+            # Obter as linhas selecionadas
+            selected_rows = grid_response['selected_rows']
+            if selected_rows:
+                st.write("Pares Selecionados para Análise:")
+                for row in selected_rows:
+                    st.write(f"Par: {row['Pair']} | p-value: {row['p-value']:.5f} | Z-Score: {row['Z-Score']:.2f}")
+            else:
+                st.write("Nenhum par selecionado.")
+        else:
+            st.write("Nenhum par cointegrado encontrado.")
