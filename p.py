@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 from PIL import Image
 from statsmodels.tsa.stattools import coint
 import numpy as np
+import statsmodels.api as sm
+from hurst import compute_Hc
+import matplotlib.pyplot as plt
 
 # Configurações da Página
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
@@ -95,13 +98,48 @@ def carregar_icone(ticker):
         print(f"Imagem não encontrada para: {ticker_base}")
         return None
 
-# Função para encontrar pares cointegrados e calcular z-score
+# Função para calcular Half-Life
+def half_life_calc(ts):
+    lagged = ts.shift(1).fillna(method="bfill")
+    delta = ts - lagged
+    X = sm.add_constant(lagged.values)
+    ar_res = sm.OLS(delta, X).fit()
+    half_life = -1 * np.log(2) / ar_res.params[1]
+    return half_life
+
+# Função para calcular Hurst exponent
+def hurst_exponent(ts):
+    H, c, data = compute_Hc(ts, kind='price', simplified=True)
+    return H
+
+# Função para calcular Beta Rotation (ang. cof)
+def beta_rotation(series_x, series_y, window=40):
+    beta_list = []
+    try:
+        for i in range(0, len(series_x) - window):
+            slice_x = series_x[i:i + window]
+            slice_y = series_y[i:i + window]
+            X = sm.add_constant(slice_x.values)
+            mod = sm.OLS(slice_y, X)
+            results = mod.fit()
+            beta = results.params[1]
+            beta_list.append(beta)
+    except Exception as e:
+        st.error(f"Erro ao calcular beta rotation: {e}")
+        raise
+
+    return beta_list[-1]  # Return the most recent beta value
+
+# Função para encontrar pares cointegrados e calcular z-score, half-life, Hurst, ang. cof
 def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower):
     n = data.shape[1]
     keys = data.keys()
     pairs = []
     pvalues = []
     zscores = []
+    half_lives = []
+    hursts = []
+    beta_rotations = []
 
     for i in range(n):
         for j in range(i + 1, n):
@@ -118,8 +156,11 @@ def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower
                     pairs.append((keys[i], keys[j]))
                     pvalues.append(pvalue)
                     zscores.append(zscore.iloc[-1])
+                    half_lives.append(half_life_calc(ratios))
+                    hursts.append(hurst_exponent(ratios))
+                    beta_rotations.append(beta_rotation(S1, S2))
 
-    return pairs, pvalues, zscores
+    return pairs, pvalues, zscores, half_lives, hursts, beta_rotations
 
 # Função para carregar todas as cotações do banco de dados
 def carregar_todas_cotacoes():
@@ -273,8 +314,10 @@ if selected == "Análise":
         numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
         st.write(f"Número de períodos selecionados para análise: {numero_de_periodos_selecionados}")
 
-        # Encontrar os pares cointegrados e calcular z-scores
-        pairs, pvalues, zscores = find_cointegrated_pairs(cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower)
+        # Encontrar os pares cointegrados e calcular z-scores, half-lives, hurst, beta rotations
+        pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
+            cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
+        )
 
         if pairs:
             # Criar DataFrame para exibir os resultados
@@ -282,7 +325,9 @@ if selected == "Análise":
                 'Pair': [f"{pair[0]} - {pair[1]}" for pair in pairs],
                 'p-value': pvalues,
                 'Z-Score': zscores,
-                'Selecionar': [False] * len(pairs)  # Checkbox inicializando como False
+                'Half-Life': half_lives,
+                'Hurst': hursts,
+                'ang. cof': beta_rotations,
             })
 
             st.subheader("Pares Cointegrados Encontrados (Z-Score fora dos limites):")
@@ -291,7 +336,7 @@ if selected == "Análise":
             gb = GridOptionsBuilder.from_dataframe(resultados_df)
             gb.configure_pagination(paginationAutoPageSize=True)
             gb.configure_side_bar()
-            gb.configure_selection(selection_mode="multiple", use_checkbox=True)
+            gb.configure_selection(selection_mode="single", use_checkbox=True)
             gridOptions = gb.build()
             
             grid_response = AgGrid(
@@ -306,9 +351,28 @@ if selected == "Análise":
             # Obter as linhas selecionadas
             selected_rows = grid_response['selected_rows']
             if selected_rows:
-                st.write("Pares Selecionados para Análise:")
-                for row in selected_rows:
-                    st.write(f"Par: {row['Pair']} | p-value: {row['p-value']:.5f} | Z-Score: {row['Z-Score']:.2f}")
+                st.write("Par Selecionado para Análise:")
+                row = selected_rows[0]
+                st.write(f"Par: {row['Pair']} | p-value: {row['p-value']:.5f} | Z-Score: {row['Z-Score']:.2f} | Half-Life: {row['Half-Life']:.2f} | Hurst: {row['Hurst']:.2f} | ang. cof: {row['ang. cof']:.2f}")
+                
+                # Exibir o gráfico do z-score para o par selecionado
+                pair_selected = row['Pair'].split(" - ")
+                S1 = cotacoes_pivot[pair_selected[0]]
+                S2 = cotacoes_pivot[pair_selected[1]]
+                ratios = S1 / S2
+                zscore_series = (ratios - ratios.mean()) / ratios.std()
+
+                st.subheader(f"Gráfico do Z-Score para o par: {row['Pair']}")
+                plt.figure(figsize=(10, 5))
+                plt.plot(zscore_series, label='Z-Score')
+                plt.axhline(0, color='black', linestyle='--')
+                plt.axhline(2, color='red', linestyle='--')
+                plt.axhline(-2, color='green', linestyle='--')
+                plt.legend(loc='best')
+                plt.title(f"Z-Score: {row['Pair']}")
+                plt.xlabel('Data')
+                plt.ylabel('Z-Score')
+                st.pyplot(plt)
             else:
                 st.write("Nenhum par selecionado.")
         else:
