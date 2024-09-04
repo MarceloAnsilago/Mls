@@ -290,25 +290,45 @@ if selected == "Cotações":
     else:
         st.write("Nenhuma cotação disponível ainda.")
 
+
+
+
+
+
+
+
+
 # Página de Análise
 if selected == "Análise":
     st.title("Análise de Cointegração de Ações")
 
     # Seleção de parâmetros para análise
     with st.form(key='analysis_form'):
-        numero_periodos = st.number_input("Número de Períodos para Análise", min_value=1, value=120, help="Número de períodos (mais recentes) para considerar na análise de cointegração.")
+        numero_periodos = st.number_input(
+            "Número de Períodos para Análise",
+            min_value=1,
+            value=120,
+            help="Número de períodos (mais recentes) para considerar na análise de cointegração."
+        )
         zscore_threshold_upper = st.number_input("Limite Superior do Z-Score", value=2.0)
         zscore_threshold_lower = st.number_input("Limite Inferior do Z-Score", value=-2.0)
         submit_button = st.form_submit_button(label="Analisar Pares Cointegrados")
 
-    if submit_button:
-        cotacoes_df = carregar_todas_cotacoes()
+    if submit_button or 'cotacoes_pivot' in st.session_state:
+        if submit_button:
+            cotacoes_df = carregar_todas_cotacoes()
 
-        # Transformar os dados em um formato adequado para a cointegração
-        cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
+            # Transformar os dados em um formato adequado para a cointegração
+            cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
 
-        # Selecionar os últimos `numero_periodos` (mais recentes)
-        cotacoes_pivot = cotacoes_pivot.tail(numero_periodos)
+            # Selecionar os últimos `numero_periodos` (mais recentes)
+            cotacoes_pivot = cotacoes_pivot.tail(numero_periodos)
+
+            # Armazenar no session state
+            st.session_state['cotacoes_pivot'] = cotacoes_pivot
+
+        # Pegar do session state se existir
+        cotacoes_pivot = st.session_state['cotacoes_pivot']
 
         # Verificar o número de períodos que realmente foram selecionados
         numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
@@ -320,60 +340,39 @@ if selected == "Análise":
         )
 
         if pairs:
-            # Criar DataFrame para exibir os resultados
-            resultados_df = pd.DataFrame({
-                'Pair': [f"{pair[0]} - {pair[1]}" for pair in pairs],
-                'p-value': pvalues,
-                'Z-Score': zscores,
-                'Half-Life': half_lives,
-                'Hurst': hursts,
-                'ang. cof': beta_rotations,
-            })
+            # Criar uma lista de pares com Z-Score
+            for idx, (pair, zscore) in enumerate(zip(pairs, zscores)):
+                par_str = f"{pair[0]} - {pair[1]}"
 
-            st.subheader("Pares Cointegrados Encontrados (Z-Score fora dos limites):")
-            
-            # Configurando a grade (grid) com st-aggrid
-            gb = GridOptionsBuilder.from_dataframe(resultados_df)
-            gb.configure_pagination(paginationAutoPageSize=True)
-            gb.configure_side_bar()
-            gb.configure_selection(selection_mode="single", use_checkbox=True)
-            gridOptions = gb.build()
-            
-            grid_response = AgGrid(
-                resultados_df,
-                gridOptions=gridOptions,
-                enable_enterprise_modules=True,
-                update_mode="MODEL_CHANGED",
-                allow_unsafe_jscode=True,
-                fit_columns_on_grid_load=True,
-            )
+                # Verifica se o botão foi clicado para o par atual
+                if st.button(f"Exibir gráfico para o par: {par_str} | Z-Score: {zscore:.2f}", key=f"btn_{idx}"):
+                    st.session_state['par_selecionado'] = pair
 
-            # Obter as linhas selecionadas
-            selected_rows = grid_response['selected_rows']
-            if selected_rows:
-                st.write("Par Selecionado para Análise:")
-                row = selected_rows[0]
-                st.write(f"Par: {row['Pair']} | p-value: {row['p-value']:.5f} | Z-Score: {row['Z-Score']:.2f} | Half-Life: {row['Half-Life']:.2f} | Hurst: {row['Hurst']:.2f} | ang. cof: {row['ang. cof']:.2f}")
-                
-                # Exibir o gráfico do z-score para o par selecionado
-                pair_selected = row['Pair'].split(" - ")
-                S1 = cotacoes_pivot[pair_selected[0]]
-                S2 = cotacoes_pivot[pair_selected[1]]
-                ratios = S1 / S2
-                zscore_series = (ratios - ratios.mean()) / ratios.std()
+        # Exibe o gráfico apenas se houver um par selecionado
+        if 'par_selecionado' in st.session_state:
+            pair_selected = st.session_state['par_selecionado']
+            par_str = f"{pair_selected[0]} - {pair_selected[1]}"
 
-                st.subheader(f"Gráfico do Z-Score para o par: {row['Pair']}")
-                plt.figure(figsize=(10, 5))
-                plt.plot(zscore_series, label='Z-Score')
-                plt.axhline(0, color='black', linestyle='--')
-                plt.axhline(2, color='red', linestyle='--')
-                plt.axhline(-2, color='green', linestyle='--')
-                plt.legend(loc='best')
-                plt.title(f"Z-Score: {row['Pair']}")
-                plt.xlabel('Data')
-                plt.ylabel('Z-Score')
-                st.pyplot(plt)
-            else:
-                st.write("Nenhum par selecionado.")
+            # Exibir o par escolhido e seus detalhes
+            st.markdown(f"**Par Selecionado:** {par_str}")
+
+            # Exibir o gráfico do z-score para o par selecionado
+            S1 = cotacoes_pivot[pair_selected[0]]
+            S2 = cotacoes_pivot[pair_selected[1]]
+            ratios = S1 / S2
+            zscore_series = (ratios - ratios.mean()) / ratios.std()
+
+            st.subheader(f"Gráfico do Z-Score para o par: {par_str}")
+            plt.figure(figsize=(10, 5))
+            plt.plot(zscore_series, label='Z-Score')
+            plt.axhline(0, color='black', linestyle='--')
+            plt.axhline(2, color='red', linestyle='--')
+            plt.axhline(-2, color='green', linestyle='--')
+            plt.legend(loc='best')
+            plt.title(f"Z-Score: {par_str}")
+            plt.xlabel('Data')
+            plt.ylabel('Z-Score')
+            st.pyplot(plt)
+
         else:
             st.write("Nenhum par cointegrado encontrado.")
