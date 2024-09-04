@@ -343,22 +343,23 @@ if selected == "Análise":
         )
 
         if pairs:
-            # Criar uma lista de pares com todas as métricas (Z-Score, P-Value, Hurst, Beta)
-            for idx, (pair, zscore, pvalue, hurst, beta) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations)):
+            # Criar uma lista de pares com todas as métricas (Z-Score, P-Value, Hurst, Beta, Half-Life)
+            for idx, (pair, zscore, pvalue, hurst, beta, half_life) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations, half_lives)):
                 par_str = f"{pair[0]} - {pair[1]}"
-                metricas_str = f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f}"
+                metricas_str = f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f} | Half-Life: {half_life:.2f}"
 
-                # Botão único para exibir todas as métricas
-                if st.button(f"Exibir gráfico e métricas para o par: {par_str} | {metricas_str}", key=f"btn_{idx}"):
+                # Botão para exibir todas as métricas com o par
+                if st.button(f"{par_str} | {metricas_str}", key=f"btn_{idx}"):
                     st.session_state['par_selecionado'] = pair
 
         # Exibe o gráfico apenas se houver um par selecionado
         if 'par_selecionado' in st.session_state:
             pair_selected = st.session_state['par_selecionado']
             par_str = f"{pair_selected[0]} - {pair_selected[1]}"
+            metricas_str = f"Z-Score: {zscores[pairs.index(pair_selected)]:.2f} | P-Value: {pvalues[pairs.index(pair_selected)]:.4f} | Hurst: {hursts[pairs.index(pair_selected)]:.4f} | Beta: {beta_rotations[pairs.index(pair_selected)]:.4f} | Half-Life: {half_lives[pairs.index(pair_selected)]:.2f}"
 
-            # Exibir o par escolhido e seus detalhes
-            st.markdown(f"**Par Selecionado:** {par_str}")
+            # Exibir o par escolhido, suas métricas e o gráfico do Z-Score
+            st.markdown(f"<h4>{par_str} | {metricas_str}</h4>", unsafe_allow_html=True)
 
             # Exibir o gráfico do z-score para o par selecionado
             S1 = cotacoes_pivot[pair_selected[0]]
@@ -366,14 +367,13 @@ if selected == "Análise":
             ratios = S1 / S2
             zscore_series = (ratios - ratios.mean()) / ratios.std()
 
-            st.subheader(f"Gráfico do Z-Score para o par: {par_str}")
+            # st.subheader(f"Gráfico do Z-Score para o par:")
             plt.figure(figsize=(10, 5))
             plt.plot(zscore_series, label='Z-Score')
             plt.axhline(0, color='black', linestyle='--')
             plt.axhline(2, color='red', linestyle='--')
             plt.axhline(-2, color='green', linestyle='--')
             plt.legend(loc='best')
-            plt.title(f"Z-Score: {par_str}")
             plt.xlabel('Data')
             plt.ylabel('Z-Score')
             st.pyplot(plt)
