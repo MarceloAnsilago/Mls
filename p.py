@@ -297,7 +297,6 @@ if selected == "Cotações":
 
 
 
-
 # Página de Análise
 if selected == "Análise":
     st.title("Análise de Cointegração de Ações")
@@ -334,18 +333,23 @@ if selected == "Análise":
         numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
         st.write(f"Número de períodos selecionados para análise: {numero_de_periodos_selecionados}")
 
+        # Adiciona um separador e o título "Pares Encontrados"
+        st.markdown("---")  # Separador
+        st.subheader("Pares Encontrados")
+
         # Encontrar os pares cointegrados e calcular z-scores, half-lives, hurst, beta rotations
         pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
             cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
         )
 
         if pairs:
-            # Criar uma lista de pares com Z-Score
-            for idx, (pair, zscore) in enumerate(zip(pairs, zscores)):
+            # Criar uma lista de pares com todas as métricas (Z-Score, P-Value, Hurst, Beta)
+            for idx, (pair, zscore, pvalue, hurst, beta) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations)):
                 par_str = f"{pair[0]} - {pair[1]}"
+                metricas_str = f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f}"
 
-                # Verifica se o botão foi clicado para o par atual
-                if st.button(f"Exibir gráfico para o par: {par_str} | Z-Score: {zscore:.2f}", key=f"btn_{idx}"):
+                # Botão único para exibir todas as métricas
+                if st.button(f"Exibir gráfico e métricas para o par: {par_str} | {metricas_str}", key=f"btn_{idx}"):
                     st.session_state['par_selecionado'] = pair
 
         # Exibe o gráfico apenas se houver um par selecionado
