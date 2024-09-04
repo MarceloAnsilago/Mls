@@ -13,7 +13,7 @@ import numpy as np
 import statsmodels.api as sm
 from hurst import compute_Hc
 import matplotlib.pyplot as plt
-
+from matplotlib.ticker import MaxNLocator 
 # Configurações da Página
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
 logo_image = Image.open("logos/LogoApp.jpg")
@@ -352,31 +352,40 @@ if selected == "Análise":
                 if st.button(f"{par_str} | {metricas_str}", key=f"btn_{idx}"):
                     st.session_state['par_selecionado'] = pair
 
-        # Exibe o gráfico apenas se houver um par selecionado
-        if 'par_selecionado' in st.session_state:
-            pair_selected = st.session_state['par_selecionado']
-            par_str = f"{pair_selected[0]} - {pair_selected[1]}"
-            metricas_str = f"Z-Score: {zscores[pairs.index(pair_selected)]:.2f} | P-Value: {pvalues[pairs.index(pair_selected)]:.4f} | Hurst: {hursts[pairs.index(pair_selected)]:.4f} | Beta: {beta_rotations[pairs.index(pair_selected)]:.4f} | Half-Life: {half_lives[pairs.index(pair_selected)]:.2f}"
 
-            # Exibir o par escolhido, suas métricas e o gráfico do Z-Score
-            st.markdown(f"<h4>{par_str} | {metricas_str}</h4>", unsafe_allow_html=True)
+            # Exibe o gráfico apenas se houver um par selecionado
+            if 'par_selecionado' in st.session_state:
+                pair_selected = st.session_state['par_selecionado']
+                par_str = f"{pair_selected[0]} - {pair_selected[1]}"
+                metricas_str = f"Z-Score: {zscores[pairs.index(pair_selected)]:.2f} | P-Value: {pvalues[pairs.index(pair_selected)]:.4f} | Hurst: {hursts[pairs.index(pair_selected)]:.4f} | Beta: {beta_rotations[pairs.index(pair_selected)]:.4f} | Half-Life: {half_lives[pairs.index(pair_selected)]:.2f}"
 
-            # Exibir o gráfico do z-score para o par selecionado
-            S1 = cotacoes_pivot[pair_selected[0]]
-            S2 = cotacoes_pivot[pair_selected[1]]
-            ratios = S1 / S2
-            zscore_series = (ratios - ratios.mean()) / ratios.std()
+                # Exibir o par escolhido, suas métricas e o gráfico do Z-Score
+                st.markdown(f"<h4>{par_str} | {metricas_str}</h4>", unsafe_allow_html=True)
 
-            # st.subheader(f"Gráfico do Z-Score para o par:")
-            plt.figure(figsize=(10, 5))
-            plt.plot(zscore_series, label='Z-Score')
-            plt.axhline(0, color='black', linestyle='--')
-            plt.axhline(2, color='red', linestyle='--')
-            plt.axhline(-2, color='green', linestyle='--')
-            plt.legend(loc='best')
-            plt.xlabel('Data')
-            plt.ylabel('Z-Score')
-            st.pyplot(plt)
+                # Exibir o gráfico do z-score para o par selecionado
+                S1 = cotacoes_pivot[pair_selected[0]]
+                S2 = cotacoes_pivot[pair_selected[1]]
+                ratios = S1 / S2
+                zscore_series = (ratios - ratios.mean()) / ratios.std()
 
-        else:
-            st.write("Nenhum par cointegrado encontrado.")
+                plt.figure(figsize=(10, 3))
+                plt.plot(zscore_series, label='Z-Score')
+                plt.axhline(0, color='black', linestyle='--')
+                plt.axhline(2, color='red', linestyle='--')
+                plt.axhline(-2, color='green', linestyle='--')
+                plt.legend(loc='best')
+
+                # Ajustando o eixo X (Data)
+                plt.xlabel('Data', fontsize=10)
+                plt.ylabel('Z-Score', fontsize=10)
+
+                # Diminuindo a quantidade de rótulos e rotacionando as datas no eixo X
+                plt.xticks(rotation=45, fontsize=6)  # Diminuir ainda mais a fonte
+
+                # Reduzir a frequência dos rótulos exibidos no eixo X
+                plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+
+                st.pyplot(plt)
+
+            else:
+                st.write("Nenhum par cointegrado encontrado.")
