@@ -13,9 +13,8 @@ import numpy as np
 import statsmodels.api as sm
 from hurst import compute_Hc
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator 
-
-
+from matplotlib.ticker import MaxNLocator
+from sklearn.linear_model import LinearRegression
 
 
 # Configurações da Página
@@ -28,7 +27,7 @@ def get_connection():
     return conn
 
 # Função para atualizar cotações
-def atualizar_cotações():
+def atualizar_cotacoes():
     with st.spinner('Atualizando cotações...'):
         conn = get_connection()
         cursor = conn.cursor()
@@ -41,7 +40,7 @@ def atualizar_cotações():
             # Verificar a data mais recente para cada ticker no banco de dados
             cursor.execute("SELECT MAX(data) FROM cotacoes WHERE ticker = ?", (ticker,))
             ultima_data = cursor.fetchone()[0]
-            
+
             if ultima_data:
                 # Se houver uma data no banco, buscar cotações a partir do dia seguinte
                 start_date = datetime.strptime(ultima_data, "%Y-%m-%d") + timedelta(days=1)
@@ -51,20 +50,20 @@ def atualizar_cotações():
 
             # Buscar as cotações do Yahoo Finance a partir da data mais recente até hoje
             dados = yf.download(ticker, start=start_date.strftime("%Y-%m-%d"), end=datetime.now().strftime("%Y-%m-%d"))['Close']
-            
+
             # Inserir novas cotações no banco de dados
             for data, fechamento in dados.items():
                 cursor.execute('''
                 INSERT OR IGNORE INTO cotacoes (ticker, data, fechamento) VALUES (?, ?, ?)
                 ''', (ticker, data.strftime('%Y-%m-%d'), fechamento))
-            
+
         conn.commit()
         conn.close()
     st.success("Cotações atualizadas com sucesso!")
 
 # Adicionar um botão para atualização
 if st.button("Atualizar Cotações"):
-    atualizar_cotações()
+    atualizar_cotacoes()
 
 # Função para carregar as cotações mais recentes
 def carregar_acoes():
@@ -134,6 +133,63 @@ def beta_rotation(series_x, series_y, window=40):
 
     return beta_list[-1]  # Return the most recent beta value
 
+# Função para calcular o beta móvel em uma janela deslizante
+def calcular_beta_movel(S1, S2, window=40):
+    returns_S1 = np.log(S1 / S1.shift(1)).dropna()
+    returns_S2 = np.log(S2 / S2.shift(1)).dropna()
+
+    betas = []
+    index_values = returns_S1.index[window-1:]  # Ajustar para a janela
+
+    for i in range(window, len(returns_S1) + 1):
+        reg = LinearRegression().fit(returns_S2[i-window:i].values.reshape(-1, 1), returns_S1[i-window:i].values)
+        betas.append(reg.coef_[0])
+
+    return pd.Series(betas, index=index_values)
+
+# Exibir o gráfico de beta móvel
+def plotar_beta_movel(S1, S2, window=40):
+    beta_movel = calcular_beta_movel(S1, S2, window)
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(beta_movel, label=f'Beta Móvel ({window} períodos)')
+    plt.axhline(0, color='black', linestyle='--')
+    plt.title(f'Beta Móvel ({window} períodos')
+    plt.xlabel('Data')
+    plt.ylabel('Beta')
+    plt.legend()
+
+    # Ajustar as datas para exibição transversal e diminuir a fonte
+    plt.xticks(rotation=45, fontsize=6)
+    
+    # Reduzir a frequência dos rótulos exibidos no eixo X
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+
+    plt.grid(True)
+    st.pyplot(plt)
+
+# Exibir o gráfico de dispersão entre os dois ativos
+def plotar_grafico_dispersao(S1, S2):
+    plt.figure(figsize=(10, 5))
+    plt.scatter(S1, S2)
+    plt.title(f'Dispersão entre {S1.name} e {S2.name}')
+    plt.xlabel(f'{S1.name}')
+    plt.ylabel(f'{S2.name}')
+    plt.grid(True)
+    st.pyplot(plt)
+
+# Função para carregar todas as cotações do banco de dados
+def carregar_todas_cotacoes():
+    conn = get_connection()
+    query = """
+    SELECT data, ticker, fechamento 
+    FROM cotacoes 
+    ORDER BY data DESC
+    """
+    cotacoes_df = pd.read_sql(query, conn)
+    conn.close()
+    return cotacoes_df
+
 # Função para encontrar pares cointegrados e calcular z-score, half-life, Hurst, ang. cof
 def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower):
     n = data.shape[1]
@@ -150,11 +206,11 @@ def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower
             S1 = data[keys[i]]
             S2 = data[keys[j]]
             score, pvalue, _ = coint(S1, S2)
-            
+
             if pvalue < 0.05:
                 ratios = S1 / S2
                 zscore = (ratios - ratios.mean()) / ratios.std()
-                
+
                 # Filtrar pelos limites de z-score
                 if zscore.iloc[-1] > zscore_threshold_upper or zscore.iloc[-1] < zscore_threshold_lower:
                     pairs.append((keys[i], keys[j]))
@@ -165,18 +221,6 @@ def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower
                     beta_rotations.append(beta_rotation(S1, S2))
 
     return pairs, pvalues, zscores, half_lives, hursts, beta_rotations
-
-# Função para carregar todas as cotações do banco de dados
-def carregar_todas_cotacoes():
-    conn = get_connection()
-    query = """
-    SELECT data, ticker, fechamento 
-    FROM cotacoes 
-    ORDER BY data DESC
-    """
-    cotacoes_df = pd.read_sql(query, conn)
-    conn.close()
-    return cotacoes_df
 
 # Menu Lateral
 with st.sidebar:
@@ -294,13 +338,6 @@ if selected == "Cotações":
     else:
         st.write("Nenhuma cotação disponível ainda.")
 
-
-
-
-
-
-
-
 # Página de Análise
 if selected == "Análise":
     st.title("Análise de Cointegração de Ações")
@@ -375,40 +412,36 @@ if selected == "Análise":
                     ratios = S1 / S2
                     zscore_series = (ratios - ratios.mean()) / ratios.std()
 
-                    plt.figure(figsize=(10, 5))  # Aumentei a altura das figuras para 5
+                    plt.figure(figsize=(10, 5))  # Tamanho ajustado
                     plt.plot(zscore_series, label='Z-Score')
                     plt.axhline(0, color='black', linestyle='--')
                     plt.axhline(2, color='red', linestyle='--')
                     plt.axhline(-2, color='green', linestyle='--')
                     plt.legend(loc='best')
-
-                    # Ajustando o eixo X (Data)
-                    plt.xlabel('Data', fontsize=10)
-                    plt.ylabel('Z-Score', fontsize=10)
-
-                    # Diminuindo a quantidade de rótulos e rotacionando as datas no eixo X
+                    plt.xlabel('Data')
+                    plt.ylabel('Z-Score')
                     plt.xticks(rotation=45, fontsize=6)
-
-                    # Reduzir a frequência dos rótulos exibidos no eixo X
                     plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-
                     st.pyplot(plt)
+
+                    # Gráfico de Beta Móvel logo abaixo do Z-Score
+                    st.subheader(f"Beta Móvel para {pair_selected[0]} e {pair_selected[1]}")
+                    plotar_beta_movel(S1, S2, window=40)
 
                 with col2:
                     # Gráfico de paridades (cotação dos dois ativos)
-                    plt.figure(figsize=(10, 5))  # Aumentei a altura das figuras para 5
+                    plt.figure(figsize=(10, 5))
                     plt.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
                     plt.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
                     plt.legend(loc='best')
-
-                    # Ajustando o eixo X (Data) para ser igual ao gráfico de Z-Score
-                    plt.xlabel('Date', fontsize=10)
+                    plt.xlabel('Data')
                     plt.xticks(rotation=45, fontsize=6)
-
-                    # Reduzir a frequência dos rótulos exibidos no eixo X
                     plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-
                     st.pyplot(plt)
+
+                    # Gráfico de Dispersão abaixo do gráfico de paridade
+                    st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
+                    plotar_grafico_dispersao(S1, S2)
 
             else:
                 st.write("Nenhum par cointegrado encontrado.")
