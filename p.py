@@ -221,6 +221,25 @@ def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower
                     beta_rotations.append(beta_rotation(S1, S2))
 
     return pairs, pvalues, zscores, half_lives, hursts, beta_rotations
+# Função para criar cards explicativos das métricas
+def criar_card_metrica(nome_metrica, valor_metrica, descricao):
+    st.markdown(
+        f"""
+        <div style="border: 1px solid #ddd; border-radius: 10px; padding: 10px; text-align: center; background-color: #f9f9f9; height: 250px; margin-bottom: 15px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+                <h4 style="margin: 0;">{nome_metrica}</h4>
+                <hr style="border: none; border-top: 2px solid red; margin: 5px 0 10px 0;">
+            </div>
+            <div style="flex-grow: 1; display: flex; justify-content: center; align-items: center;">
+                <h2 style="margin: 0; font-size: 24px;">{valor_metrica}</h2>
+            </div>
+            <div style="margin-top: 10px; text-align: center;">
+                <p style="font-size: 14px; color: #888; margin-bottom: 4px;">{descricao}</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # Menu Lateral
 with st.sidebar:
@@ -439,9 +458,49 @@ if selected == "Análise":
                     plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
                     st.pyplot(plt)
 
-                    # Gráfico de Dispersão abaixo do gráfico de paridade
+                    # Gráfico de Dispersão logo abaixo do gráfico de paridade
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
+                # Adicionar um separador entre os gráficos e as métricas
+                st.markdown("---") 
+                # Agora adicionamos os 5 cards com as métricas logo abaixo dos gráficos
+                st.subheader("Métricas Explicativas")
+                col1, col2, col3, col4, col5 = st.columns(5)
+
+                with col1:
+                    criar_card_metrica(
+                        "Z-Score", 
+                        f"{zscores[pairs.index(pair_selected)]:.2f}", 
+                        "O Z-Score mede quantos desvios padrão o ativo está de sua média histórica."
+                    )
+
+                with col2:
+                    criar_card_metrica(
+                        "P-Value", 
+                        f"{pvalues[pairs.index(pair_selected)]:.4f}", 
+                        "O P-Value indica a probabilidade de a relação entre os ativos ocorrer por acaso."
+                    )
+
+                with col3:
+                    criar_card_metrica(
+                        "Hurst", 
+                        f"{hursts[pairs.index(pair_selected)]:.4f}", 
+                        "O Exponente de Hurst avalia a tendência de reversão à média."
+                    )
+
+                with col4:
+                    criar_card_metrica(
+                        "Beta", 
+                        f"{beta_rotations[pairs.index(pair_selected)]:.4f}", 
+                        "O Beta mede a sensibilidade de um ativo em relação a outro."
+                    )
+
+                with col5:
+                    criar_card_metrica(
+                        "Half-Life", 
+                        f"{half_lives[pairs.index(pair_selected)]:.2f}", 
+                        "O Half-Life é o tempo estimado para que a diferença entre dois ativos cointegrados reverta à média."
+                    )
 
             else:
                 st.write("Nenhum par cointegrado encontrado.")
