@@ -189,6 +189,42 @@ def carregar_todas_cotacoes():
     cotacoes_df = pd.read_sql(query, conn)
     conn.close()
     return cotacoes_df
+# Função para obter o preço atual de uma ação usando yfinance
+
+def obter_preco_atual(ticker):
+    dados = yf.download(ticker, period="1d")  # Baixar o dado mais recente
+    if not dados.empty:
+        return dados['Close'].iloc[-1]  # Retornar o preço de fechamento mais recente
+    else:
+        return None
+# Função para plotar o gráfico do Z-Score
+def plotar_grafico_zscore(S1, S2):
+    ratios = S1 / S2
+    zscore_series = (ratios - ratios.mean()) / ratios.std()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(zscore_series, label='Z-Score')
+    plt.axhline(0, color='black', linestyle='--')
+    plt.axhline(2, color='red', linestyle='--')
+    plt.axhline(-2, color='green', linestyle='--')
+    plt.legend(loc='best')
+    plt.xlabel('Data')
+    plt.ylabel('Z-Score')
+    plt.xticks(rotation=45, fontsize=6)
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    st.pyplot(plt)
+
+    # Função para plotar o gráfico dos preços das ações
+def plotar_grafico_precos(S1, S2, ticker1, ticker2):
+    plt.figure(figsize=(10, 5))
+    plt.plot(S1, label=ticker1)
+    plt.plot(S2, label=ticker2)
+    plt.legend(loc='best')
+    plt.xlabel('Data')
+    plt.ylabel('Preço de Fechamento')
+    plt.xticks(rotation=45, fontsize=6)
+    st.pyplot(plt)
+
 
 # Função para encontrar pares cointegrados e calcular z-score, half-life, Hurst, ang. cof
 def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower):
@@ -240,14 +276,58 @@ def criar_card_metrica(nome_metrica, valor_metrica, descricao):
         """,
         unsafe_allow_html=True
     )
+# Função para obter o preço atual de uma ação usando yfinance
+def obter_preco_atual(ticker):
+    dados = yf.download(ticker, period="1d")  # Baixar o dado mais recente
+    if not dados.empty:
+        return dados['Close'].iloc[-1]  # Retornar o preço de fechamento mais recente
+    else:
+        return None
+
+# Função para plotar o gráfico do Z-Score
+def plotar_grafico_zscore(S1, S2):
+    ratios = S1 / S2
+    zscore_series = (ratios - ratios.mean()) / ratios.std()
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(zscore_series, label='Z-Score')
+    plt.axhline(0, color='black', linestyle='--')
+    plt.axhline(2, color='red', linestyle='--')
+    plt.axhline(-2, color='green', linestyle='--')
+    plt.legend(loc='best')
+    plt.xlabel('Data')
+    plt.ylabel('Z-Score')
+    plt.xticks(rotation=45, fontsize=6)
+    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+    st.pyplot(plt)
+
+# Função para exibir a métrica no formato de cartão
+def exibir_metrica_cartao(ticker, ultimo_preco, ultima_data, icone=None):
+    st.markdown(
+        f"""
+        <div style="border: 1px solid #ddd; border-radius: 10px; padding: 10px; text-align: center; background-color: #f9f9f9; height: 250px; margin-bottom: 15px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+                <h4 style="margin: 0;">{ticker.replace(".SA", "")}</h4>
+                <hr style="border: none; border-top: 2px solid red; margin: 5px 0 10px 0;">
+            </div>
+            <div style="flex-grow: 1; display: flex; justify-content: center; align-items: center;">
+                {f'<img src="{icone}" style="max-width: 100%; max-height: 80px; object-fit: contain;">' if icone else ''}
+            </div>
+            <div style="margin-top: 10px; text-align: center;">
+                <h6 style="font-size: 14px; color: #888; margin-bottom: 4px;">Última Cotação ({ultima_data})</h6>
+                <h3 style="margin: 0; font-size: 24px;">R$ {ultimo_preco:.2f}</h3>
+            </div>
+        </div>
+        """, unsafe_allow_html=True
+    )
 
 # Menu Lateral
 with st.sidebar:
     st.image(logo_image, use_column_width=True)  # Exibir a imagem no menu lateral
     selected = option_menu(
         menu_title="Menu Principal",  # required
-        options=["Página Inicial", "Cotações", "Análise"],  # required
-        icons=["house", "currency-exchange", "graph-up-arrow"],  # ícones para cada página
+        options=["Página Inicial", "Cotações", "Análise", "Operações"],  # required
+        icons=["house", "currency-exchange", "graph-up-arrow", "briefcase"],  # ícones para cada página
         menu_icon="cast",  # ícone do menu
         default_index=0,  # seleciona a aba 'Página Inicial'
     )
@@ -270,26 +350,10 @@ if selected == "Página Inicial":
         # Carregar o ícone da ação
         icone = carregar_icone(ticker)
 
-        # Exibir a métrica no formato de cartão
+        # Exibir a métrica no formato de cartão usando a função reutilizável
         with cols[index % 5]:
-            st.markdown(
-                f"""
-                <div style="border: 1px solid #ddd; border-radius: 10px; padding: 10px; text-align: center; background-color: #f9f9f9; height: 250px; margin-bottom: 15px; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div>
-                        <h4 style="margin: 0;">{ticker.replace(".SA", "")}</h4>
-                        <hr style="border: none; border-top: 2px solid red; margin: 5px 0 10px 0;">
-                    </div>
-                    <div style="flex-grow: 1; display: flex; justify-content: center; align-items: center;">
-                        <img src="{icone}" style="max-width: 100%; max-height: 80px; object-fit: contain;">
-                    </div>
-                    <div style="margin-top: 10px; text-align: center;">
-                        <h6 style="font-size: 14px; color: #888; margin-bottom: 4px;">Última Cotação ({ultima_data})</h6>
-                        <h3 style="margin: 0; font-size: 24px;">R$ {ultimo_preco:.2f}</h3>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+            exibir_metrica_cartao(ticker, ultimo_preco, ultima_data, icone)
+
 
 # Página de Cotações
 if selected == "Cotações":
@@ -461,8 +525,43 @@ if selected == "Análise":
                     # Gráfico de Dispersão logo abaixo do gráfico de paridade
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
+
+              
+                # Adicionar o botão "Salvar" para incluir o par no banco de dados com a data
+                if st.button("Salvar Par para Operação"):
+                    conn = get_connection()
+                    cursor = conn.cursor()
+
+                    # Criar a tabela no banco de dados, se ainda não existir, com a nova coluna 'data'
+                    cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS operacoes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        par TEXT,
+                        zscore REAL,
+                        pvalue REAL,
+                        hurst REAL,
+                        beta REAL,
+                        half_life REAL,
+                        status TEXT,
+                        data TEXT
+                    )
+                    ''')
+
+                    # Inserir os dados do par atual na tabela "operacoes" com status "analise" e data atual
+                    data_atual = datetime.now().strftime('%Y-%m-%d')
+                    cursor.execute('''
+                    INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, status, data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (par_str, zscore, pvalue, hurst, beta, half_life, 'analise', data_atual))
+
+                    conn.commit()
+                    conn.close()
+
+                    st.success(f"Par {par_str} salvo com sucesso para operação na data {data_atual}!")
+
                 # Adicionar um separador entre os gráficos e as métricas
                 st.markdown("---") 
+
                 # Agora adicionamos os 5 cards com as métricas logo abaixo dos gráficos
                 st.subheader("Métricas Explicativas")
                 col1, col2, col3, col4, col5 = st.columns(5)
@@ -504,3 +603,81 @@ if selected == "Análise":
 
             else:
                 st.write("Nenhum par cointegrado encontrado.")
+
+
+if selected == "Operações":
+    st.title("Operações")
+
+    # Opções de status (analise, aberta, fechada)
+    status_opcoes = ["Analise", "Aberta", "Fechada"]
+    status_selecionado = st.radio("Selecione o status da operação:", status_opcoes)
+
+    # Mapeamento do valor selecionado para o status no banco de dados
+    status_mapeado = status_selecionado.lower()
+
+    # Consulta ao banco de dados para buscar pares com o status selecionado
+    conn = get_connection()
+    query = f"""
+    SELECT par, zscore, pvalue, hurst, beta, half_life, data 
+    FROM operacoes
+    WHERE status = ?
+    """
+    operacoes_df = pd.read_sql(query, conn, params=[status_mapeado])
+    conn.close()
+
+    # Se houver pares disponíveis para o status selecionado
+    if not operacoes_df.empty:
+        # Criar um selectbox para escolher o par
+        pares_disponiveis = operacoes_df['par'].tolist()
+        par_selecionado = st.selectbox(f"Selecione um par com status '{status_selecionado}':", pares_disponiveis)
+
+        # Buscar os detalhes do par selecionado
+        par_detalhes = operacoes_df[operacoes_df['par'] == par_selecionado].iloc[0]
+
+        # Dividir os tickers do par selecionado
+        ticker1, ticker2 = par_selecionado.split(" - ")
+
+        # Obter o preço atual de cada ação diretamente do Yahoo Finance
+        preco_acao1 = obter_preco_atual(ticker1)
+        preco_acao2 = obter_preco_atual(ticker2)
+
+        # Primeira linha: gráficos do Z-Score e dos preços
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Baixar os dados históricos das ações para calcular o Z-Score
+            S1 = yf.download(ticker1, period="1y")['Close']
+            S2 = yf.download(ticker2, period="1y")['Close']
+
+            # Plotar o gráfico do Z-Score
+            plotar_grafico_zscore(S1, S2)
+
+        with col2:
+            # Exibir as métricas detalhadas do par
+            st.markdown(f"### Detalhes do Par: {par_selecionado}")
+            st.markdown(
+                f"""
+                **Data:** {par_detalhes['data']}  
+                **Z-Score:** {par_detalhes['zscore']:.2f}  
+                **P-Value:** {par_detalhes['pvalue']:.4f}  
+                **Hurst:** {par_detalhes['hurst']:.4f}  
+                **Beta:** {par_detalhes['beta']:.4f}  
+                **Half-Life:** {par_detalhes['half_life']:.2f}  
+                """
+            )
+
+        # Segunda linha: gráficos de preços e cotações recentes
+        col3, col4 = st.columns(2)
+
+        with col3:
+            # Plotar o gráfico dos preços das duas ações
+            plotar_grafico_precos(S1, S2, ticker1, ticker2)
+
+        with col4:
+            # Exibir as cotações mais recentes de cada ação (sem cards, apenas markdown)
+            st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_acao1:.2f}")
+            st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_acao2:.2f}")
+
+        st.markdown("---")
+    else:
+        st.write(f"Não há pares com status '{status_selecionado}' no momento.")
