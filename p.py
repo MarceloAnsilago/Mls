@@ -354,6 +354,226 @@ if selected == "Página Inicial":
         with cols[index % 5]:
             exibir_metrica_cartao(ticker, ultimo_preco, ultima_data, icone)
 
+
+# Página de Cotações
+if selected == "Cotações":
+    st.title("Cotações")
+    # Expander com Formulário
+    with st.expander("Adicionar Ação"):
+        with st.form(key='add_stock_form'):
+            nome_acao = st.text_input("Nome da Ação (Ticker)", help="Digite o código da ação, por exemplo, PETR4 para Petrobras.")
+            periodos = st.number_input("Períodos (em dias)", min_value=1, max_value=365, value=150, help="Número de dias para baixar cotações históricas.")
+            submit_button = st.form_submit_button(label="Adicionar Ação e Baixar Cotações")
+        if submit_button:
+            if nome_acao:
+                nome_acao = nome_acao.upper()
+                if not nome_acao.endswith(".SA"):
+                    nome_acao += ".SA"
+                
+                if nome_acao in [acao[0] for acao in st.session_state.get('acoes_adicionadas', [])]:
+                    st.warning(f"Ação {nome_acao} já foi adicionada anteriormente.")
+                else:
+                    try:
+                        st.write(f"Baixando cotações para {nome_acao}...")
+                        dados = yf.download(nome_acao, period=f"{periodos}d")['Close']
+                        if dados.empty:
+                            st.error(f"Erro: Nenhum dado encontrado para {nome_acao}. Verifique o ticker.")
+                        else:
+                            dados.name = nome_acao
+                            # Salvar as cotações no banco de dados
+                            conn = get_connection()
+                            for data, fechamento in dados.items():
+                                cursor = conn.cursor()
+                                cursor.execute('''
+                                INSERT OR IGNORE INTO cotacoes (ticker, data, fechamento) VALUES (?, ?, ?)
+                                ''', (nome_acao, data.strftime('%Y-%m-%d'), fechamento))
+                            conn.commit()
+                            conn.close()
+                            st.session_state.setdefault('acoes_adicionadas', []).append((nome_acao, periodos))
+                            st.success(f"Ação {nome_acao} adicionada com {periodos} períodos.")
+                    except Exception as e:
+                        st.error(f"Erro ao baixar cotações para {nome_acao}: {e}")
+            else:
+                st.error("O nome da ação é obrigatório!")
+    # Exibição das Cotações em uma Grade (Grid)
+    st.subheader("Preços de Fechamento das Ações")
+    conn = get_connection()
+    query = "SELECT data, ticker, fechamento FROM cotacoes ORDER BY data DESC"
+    cotacoes_df = pd.read_sql(query, conn)
+    conn.close()
+    if not cotacoes_df.empty:
+        cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
+        # Configurando a grade (grid) com st-aggrid
+        gb = GridOptionsBuilder.from_dataframe(cotacoes_pivot.reset_index())
+        gb.configure_pagination(paginationAutoPageSize=True)  # Habilitar paginação
+        gb.configure_side_bar()  # Adicionar barra lateral para filtros
+        gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, editable=True)
+        gridOptions = gb.build()
+        AgGrid(cotacoes_pivot.reset_index(), gridOptions=gridOptions, enable_enterprise_modules=True)
+    else:
+        st.write("Nenhuma cotação disponível ainda.")
+# Página de Análise
+if selected == "Análise":
+    st.title("Análise de Cointegração de Ações")
+    # Seleção de parâmetros para análise
+    with st.form(key='analysis_form'):
+        numero_periodos = st.number_input(
+            "Número de Períodos para Análise",
+            min_value=1,
+            value=120,
+            help="Número de períodos (mais recentes) para considerar na análise de cointegração."
+        )
+        zscore_threshold_upper = st.number_input("Limite Superior do Z-Score", value=2.0)
+        zscore_threshold_lower = st.number_input("Limite Inferior do Z-Score", value=-2.0)
+        submit_button = st.form_submit_button(label="Analisar Pares Cointegrados")
+    if submit_button or 'cotacoes_pivot' in st.session_state:
+        if submit_button:
+            cotacoes_df = carregar_todas_cotacoes()
+            # Transformar os dados em um formato adequado para a cointegração
+            cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
+            # Selecionar os últimos `numero_periodos` (mais recentes)
+            cotacoes_pivot = cotacoes_pivot.tail(numero_periodos)
+            # Armazenar no session state
+            st.session_state['cotacoes_pivot'] = cotacoes_pivot
+        # Pegar do session state se existir
+        cotacoes_pivot = st.session_state['cotacoes_pivot']
+        # Verificar o número de períodos que realmente foram selecionados
+        numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
+        st.write(f"Número de períodos selecionados para análise: {numero_de_periodos_selecionados}")
+        # Adiciona um separador e o título "Pares Encontrados"
+        st.subheader("Pares Encontrados")
+        
+        # Encontrar os pares cointegrados e calcular z-scores, half-lives, hurst, beta rotations
+        pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
+            cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
+        )
+        if pairs:
+            # Criar uma lista de pares com todas as métricas (Z-Score, P-Value, Hurst, Beta, Half-Life)
+            for idx, (pair, zscore, pvalue, hurst, beta, half_life) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations, half_lives)):
+                par_str = f"{pair[0]} - {pair[1]}"
+                metricas_str = f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f} | Half-Life: {half_life:.2f}"
+                # Botão para exibir todas as métricas com o par
+                if st.button(f"{par_str} | {metricas_str}", key=f"btn_{idx}"):
+                    st.session_state['par_selecionado'] = pair
+            # Exibe o gráfico apenas se houver um par selecionado
+            st.markdown("---")  # Separador
+            if 'par_selecionado' in st.session_state:
+                pair_selected = st.session_state['par_selecionado']
+                par_str = f"{pair_selected[0]} - {pair_selected[1]}"
+                metricas_str = f"Z-Score: {zscores[pairs.index(pair_selected)]:.2f} | P-Value: {pvalues[pairs.index(pair_selected)]:.4f} | Hurst: {hursts[pairs.index(pair_selected)]:.4f} | Beta: {beta_rotations[pairs.index(pair_selected)]:.4f} | Half-Life: {half_lives[pairs.index(pair_selected)]:.2f}"
+                # Centralizar o título usando HTML
+                st.markdown(f"<h4 style='text-align: center;'>{par_str} | {metricas_str}</h4>", unsafe_allow_html=True)
+                # Configurando as colunas
+                col1, col2 = st.columns(2)
+                with col1:
+                    # Gráfico do Z-Score
+                    S1 = cotacoes_pivot[pair_selected[0]]
+                    S2 = cotacoes_pivot[pair_selected[1]]
+                    ratios = S1 / S2
+                    zscore_series = (ratios - ratios.mean()) / ratios.std()
+                    plt.figure(figsize=(10, 5))  # Tamanho ajustado
+                    plt.plot(zscore_series, label='Z-Score')
+                    plt.axhline(0, color='black', linestyle='--')
+                    plt.axhline(2, color='red', linestyle='--')
+                    plt.axhline(-2, color='green', linestyle='--')
+                    plt.legend(loc='best')
+                    plt.xlabel('Data')
+                    plt.ylabel('Z-Score')
+                    plt.xticks(rotation=45, fontsize=6)
+                    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+                    st.pyplot(plt)
+                    # Gráfico de Beta Móvel logo abaixo do Z-Score
+                    st.subheader(f"Beta Móvel para {pair_selected[0]} e {pair_selected[1]}")
+                    plotar_beta_movel(S1, S2, window=40)
+                with col2:
+                    # Gráfico de paridades (cotação dos dois ativos)
+                    plt.figure(figsize=(10, 5))
+                    plt.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
+                    plt.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
+                    plt.legend(loc='best')
+                    plt.xlabel('Data')
+                    plt.xticks(rotation=45, fontsize=6)
+                    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+                    st.pyplot(plt)
+                    # Gráfico de Dispersão logo abaixo do gráfico de paridade
+                    st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
+                    plotar_grafico_dispersao(S1, S2)
+
+
+                # Adicionar o botão "Salvar" para incluir o par no banco de dados com a data
+                if st.button("Salvar Par para Operação"):
+                    conn = get_connection()
+                    cursor = conn.cursor()
+
+                    # Criar a tabela no banco de dados, se ainda não existir, com a nova coluna 'data'
+                    cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS operacoes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        par TEXT,
+                        zscore REAL,
+                        pvalue REAL,
+                        hurst REAL,
+                        beta REAL,
+                        half_life REAL,
+                        status TEXT,
+                        data TEXT
+                    )
+                    ''')
+
+                    # Inserir os dados do par atual na tabela "operacoes" com status "analise" e data atual
+                    data_atual = datetime.now().strftime('%Y-%m-%d')
+                    cursor.execute('''
+                    INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, status, data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (par_str, zscore, pvalue, hurst, beta, half_life, 'analise', data_atual))
+
+                    conn.commit()
+                    conn.close()
+
+                    st.success(f"Par {par_str} salvo com sucesso para operação na data {data_atual}!")
+
+                # Adicionar um separador entre os gráficos e as métricas
+                st.markdown("---") 
+
+                # Agora adicionamos os 5 cards com as métricas logo abaixo dos gráficos
+                st.subheader("Métricas Explicativas")
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    criar_card_metrica(
+                        "Z-Score", 
+                        f"{zscores[pairs.index(pair_selected)]:.2f}", 
+                        "O Z-Score mede quantos desvios padrão o ativo está de sua média histórica."
+                    )
+                with col2:
+                    criar_card_metrica(
+                        "P-Value", 
+                        f"{pvalues[pairs.index(pair_selected)]:.4f}", 
+                        "O P-Value indica a probabilidade de a relação entre os ativos ocorrer por acaso."
+                    )
+                with col3:
+                    criar_card_metrica(
+                        "Hurst", 
+                        f"{hursts[pairs.index(pair_selected)]:.4f}", 
+                        "O Exponente de Hurst avalia a tendência de reversão à média."
+                    )
+                with col4:
+                    criar_card_metrica(
+                        "Beta", 
+                        f"{beta_rotations[pairs.index(pair_selected)]:.4f}", 
+                        "O Beta mede a sensibilidade de um ativo em relação a outro."
+                    )
+                with col5:
+                    criar_card_metrica(
+                        "Half-Life", 
+                        f"{half_lives[pairs.index(pair_selected)]:.2f}", 
+                        "O Half-Life é o tempo estimado para que a diferença entre dois ativos cointegrados reverta à média."
+                    )
+
+            else:
+                st.write("Nenhum par cointegrado encontrado.")
+
+
+
 if selected == "Operações":
     st.title("Operações")
 
