@@ -239,22 +239,34 @@ def find_cointegrated_pairs(data, zscore_threshold_upper, zscore_threshold_lower
 
     for i in range(n):
         for j in range(i + 1, n):
-            S1 = data[keys[i]]
-            S2 = data[keys[j]]
-            score, pvalue, _ = coint(S1, S2)
+            S1 = data[keys[i]].dropna()  # Remover NaNs de S1
+            S2 = data[keys[j]].dropna()  # Remover NaNs de S2
 
-            if pvalue < 0.05:
-                ratios = S1 / S2
-                zscore = (ratios - ratios.mean()) / ratios.std()
+            # Garantir que ambas as séries tenham o mesmo comprimento após a remoção dos NaNs
+            combined = pd.concat([S1, S2], axis=1).dropna()
+            if len(combined) < 2:  # Verificar se ainda há dados suficientes
+                continue
 
-                # Filtrar pelos limites de z-score
-                if zscore.iloc[-1] > zscore_threshold_upper or zscore.iloc[-1] < zscore_threshold_lower:
-                    pairs.append((keys[i], keys[j]))
-                    pvalues.append(pvalue)
-                    zscores.append(zscore.iloc[-1])
-                    half_lives.append(half_life_calc(ratios))
-                    hursts.append(hurst_exponent(ratios))
-                    beta_rotations.append(beta_rotation(S1, S2))
+            S1 = combined.iloc[:, 0]
+            S2 = combined.iloc[:, 1]
+
+            try:
+                score, pvalue, _ = coint(S1, S2)
+                if pvalue < 0.05:
+                    ratios = S1 / S2
+                    zscore = (ratios - ratios.mean()) / ratios.std()
+
+                    if zscore.iloc[-1] > zscore_threshold_upper or zscore.iloc[-1] < zscore_threshold_lower:
+                        pairs.append((keys[i], keys[j]))
+                        pvalues.append(pvalue)
+                        zscores.append(zscore.iloc[-1])
+                        half_lives.append(half_life_calc(ratios))
+                        hursts.append(hurst_exponent(ratios))
+                        beta_rotations.append(beta_rotation(S1, S2))
+
+            except Exception as e:
+                print(f"Erro ao calcular cointegração para {keys[i]} e {keys[j]}: {e}")
+                continue
 
     return pairs, pvalues, zscores, half_lives, hursts, beta_rotations
 # Função para criar cards explicativos das métricas
