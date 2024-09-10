@@ -15,7 +15,7 @@ from hurst import compute_Hc
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from sklearn.linear_model import LinearRegression
-
+import time
 
 # Configurações da Página
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
@@ -586,19 +586,36 @@ if selected == "Análise":
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 if selected == "Operações":
     st.title("Operações")
 
     # Opções de status (analise, aberta, fechada)
     status_opcoes = ["Analise", "Aberta", "Fechada"]
-    status_selecionado = st.radio("Selecione o status da operação:", status_opcoes)
+
+    # Use uma chave única para evitar o erro de chave duplicada
+    status_selecionado = st.radio("Selecione o status da operação:", status_opcoes, key="unique_status_radio")
 
     # Mapeamento do valor selecionado para o status no banco de dados
     status_mapeado = status_selecionado.lower()
 
     # Consulta ao banco de dados para buscar pares com o status selecionado
     conn = get_connection()
-    query = f"""
+    query = """
     SELECT par, zscore, pvalue, hurst, beta, half_life, data 
     FROM operacoes
     WHERE status = ?
@@ -610,7 +627,7 @@ if selected == "Operações":
     if not operacoes_df.empty:
         # Criar um selectbox para escolher o par
         pares_disponiveis = operacoes_df['par'].tolist()
-        par_selecionado = st.selectbox(f"Selecione um par com status '{status_selecionado}':", pares_disponiveis)
+        par_selecionado = st.selectbox(f"Selecione um par com status '{status_selecionado}':", pares_disponiveis, key="unique_par_selectbox")
 
         # Buscar os detalhes do par selecionado
         par_detalhes = operacoes_df[operacoes_df['par'] == par_selecionado].iloc[0]
@@ -677,6 +694,7 @@ if selected == "Operações":
             """, unsafe_allow_html=True
         )
 
+        # Expander: Calculadora de Operação
         with st.expander("Calculadora de Operação", expanded=True):
             col1, col2, col3 = st.columns(3)
 
@@ -695,7 +713,6 @@ if selected == "Operações":
                 saldo_remanescente = valor_venda - valor_compra
 
             with col2:
-                # Alterar o título da seção após clicar em "Cancelar Análise"
                 st.markdown("### Resultados da Operação")
                 st.markdown(f"""
                 - **Valor Vendido ({ticker1}):** R$ {valor_venda:.2f}  
@@ -703,9 +720,22 @@ if selected == "Operações":
                 - **Saldo Remanescente:** R$ {saldo_remanescente:.2f}
                 """)
 
-                # Adiciona o botão "Cancelar Análise"
+                # Botão para cancelar a operação
                 if st.button("Cancelar Análise"):
-                    st.markdown("### Lotes Escolhidos")
+                    conn = get_connection()
+                    cursor = conn.cursor()
+
+                    # Excluir a operação do banco de dados
+                    cursor.execute("DELETE FROM operacoes WHERE par = ?", (par_selecionado,))
+                    conn.commit()
+                    conn.close()
+
+                    # Exibir mensagem de sucesso
+                    st.success(f"A operação para o par {par_selecionado} foi cancelada e removida do banco de dados.")
+
+                    # Exibir uma mensagem para o usuário recarregar a página manualmente
+                    st.info("Por favor, recarregue a página para ver as alterações.")
+
 
             with col3:
                 # Formulário para iniciar operação
