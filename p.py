@@ -644,8 +644,8 @@ if selected == "Operações":
 
         with col1:
             # Baixar os dados históricos das ações para calcular o Z-Score
-            S1 = yf.download(ticker1, period="1y")['Close']
-            S2 = yf.download(ticker2, period="1y")['Close']
+            S1 = yf.download(ticker1, period="1y")['Close'].tail(120)
+            S2 = yf.download(ticker2, period="1y")['Close'].tail(120)
 
             # Plotar o gráfico do Z-Score
             plotar_grafico_zscore(S1, S2)
