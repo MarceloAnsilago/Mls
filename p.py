@@ -516,12 +516,13 @@ if selected == "Análise":
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
 
+
                 # Adicionar o botão "Salvar Par para Operação"
                 if st.button("Salvar Par para Operação"):
                     conn = get_connection()
                     cursor = conn.cursor()
 
-                    # Criar a tabela no banco de dados, se ainda não existir, com a nova coluna 'data'
+                    # Criar a tabela no banco de dados, se ainda não existir, com as novas colunas
                     cursor.execute('''
                     CREATE TABLE IF NOT EXISTS operacoes (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -535,6 +536,8 @@ if selected == "Análise":
                         preco_inicial_acao2 REAL,
                         preco_final_acao1 REAL,
                         preco_final_acao2 REAL,
+                        qtd_acoes1 INTEGER,
+                        qtd_acoes2 INTEGER,
                         data_inicio TEXT,
                         data_encerramento TEXT,
                         resultado REAL,
@@ -547,10 +550,15 @@ if selected == "Análise":
                     data_atual = datetime.now().strftime('%Y-%m-%d')
                     preco_inicial_acao1 = obter_preco_atual(pair_selected[0])
                     preco_inicial_acao2 = obter_preco_atual(pair_selected[1])
+                    
+                    # Adicionar inputs para capturar a quantidade de ações
+                    qtd_acoes1 = st.number_input(f"Quantidade de Ações para {pair_selected[0]}", min_value=1, value=100)
+                    qtd_acoes2 = st.number_input(f"Quantidade de Ações para {pair_selected[1]}", min_value=1, value=100)
+
                     cursor.execute('''
-                    INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, status, data_inicio, data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (par_str, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, 'analise', data_atual, data_atual))
+                    INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, qtd_acoes1, qtd_acoes2, status, data_inicio, data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (par_str, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, qtd_acoes1, qtd_acoes2, 'analise', data_atual, data_atual))
 
                     conn.commit()
                     conn.close()
