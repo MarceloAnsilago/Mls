@@ -425,6 +425,8 @@ if selected == "Cotações":
     else:
         st.write("Nenhuma cotação disponível ainda.")
 # Página de Análise
+
+
 if selected == "Análise":
     st.title("Análise de Cointegração de Ações")
     # Seleção de parâmetros para análise
@@ -443,7 +445,7 @@ if selected == "Análise":
             cotacoes_df = carregar_todas_cotacoes()
             # Transformar os dados em um formato adequado para a cointegração
             cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
-            # Selecionar os últimos `numero_periodos` (mais recentes)
+            # Selecionar os últimos numero_periodos (mais recentes)
             cotacoes_pivot = cotacoes_pivot.tail(numero_periodos)
             # Armazenar no session state
             st.session_state['cotacoes_pivot'] = cotacoes_pivot
@@ -506,13 +508,15 @@ if selected == "Análise":
                     plt.xlabel('Data')
                     plt.xticks(rotation=45, fontsize=6)
                     plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+                    # Ajustar diretamente o índice de datas no eixo X
+                    plt.gca().set_xticks(range(0, len(cotacoes_pivot.index), max(1, len(cotacoes_pivot.index) // 6)))
+                    plt.gca().set_xticklabels([pd.to_datetime(date).strftime('%Y-%m-%d') for date in cotacoes_pivot.index[::max(1, len(cotacoes_pivot.index) // 6)]], rotation=45)
                     st.pyplot(plt)
                     # Gráfico de Dispersão logo abaixo do gráfico de paridade
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
 
-
-                # Adicionar o botão "Salvar" para incluir o par no banco de dados com a data
+                # Adicionar o botão "Salvar Par para Operação"
                 if st.button("Salvar Par para Operação"):
                     conn = get_connection()
                     cursor = conn.cursor()
@@ -527,6 +531,13 @@ if selected == "Análise":
                         hurst REAL,
                         beta REAL,
                         half_life REAL,
+                        preco_inicial_acao1 REAL,
+                        preco_inicial_acao2 REAL,
+                        preco_final_acao1 REAL,
+                        preco_final_acao2 REAL,
+                        data_inicio TEXT,
+                        data_encerramento TEXT,
+                        resultado REAL,
                         status TEXT,
                         data TEXT
                     )
@@ -534,10 +545,12 @@ if selected == "Análise":
 
                     # Inserir os dados do par atual na tabela "operacoes" com status "analise" e data atual
                     data_atual = datetime.now().strftime('%Y-%m-%d')
+                    preco_inicial_acao1 = obter_preco_atual(pair_selected[0])
+                    preco_inicial_acao2 = obter_preco_atual(pair_selected[1])
                     cursor.execute('''
-                    INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, status, data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (par_str, zscore, pvalue, hurst, beta, half_life, 'analise', data_atual))
+                    INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, status, data_inicio, data)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (par_str, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, 'analise', data_atual, data_atual))
 
                     conn.commit()
                     conn.close()
@@ -583,8 +596,6 @@ if selected == "Análise":
 
             else:
                 st.write("Nenhum par cointegrado encontrado.")
-
-
 
 
 
