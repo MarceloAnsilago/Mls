@@ -552,8 +552,8 @@ if selected == "Análise":
                     preco_inicial_acao2 = obter_preco_atual(pair_selected[1])
                     
                     # Adicionar inputs para capturar a quantidade de ações
-                    qtd_acoes1 = st.number_input(f"Quantidade de Ações para {pair_selected[0]}", min_value=1, value=100)
-                    qtd_acoes2 = st.number_input(f"Quantidade de Ações para {pair_selected[1]}", min_value=1, value=100)
+                    qtd_acoes1 = 0
+                    qtd_acoes2 = 0
 
                     cursor.execute('''
                     INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, qtd_acoes1, qtd_acoes2, status, data_inicio, data)
@@ -619,23 +619,18 @@ if selected == "Análise":
 
 
 
-
 if selected == "Operações":
     st.title("Operações")
 
     # Opções de status (analise, aberta, fechada)
     status_opcoes = ["Analise", "Aberta", "Fechada"]
-
-    # Use uma chave única para evitar o erro de chave duplicada
     status_selecionado = st.radio("Selecione o status da operação:", status_opcoes, key="unique_status_radio")
-
-    # Mapeamento do valor selecionado para o status no banco de dados
     status_mapeado = status_selecionado.lower()
 
     # Consulta ao banco de dados para buscar pares com o status selecionado
     conn = get_connection()
     query = """
-    SELECT par, zscore, pvalue, hurst, beta, half_life, data 
+    SELECT par, zscore, pvalue, hurst, beta, half_life, qtd_acoes1, qtd_acoes2, preco_inicial_acao1, preco_inicial_acao2, data_inicio 
     FROM operacoes
     WHERE status = ?
     """
@@ -650,125 +645,117 @@ if selected == "Operações":
 
         # Buscar os detalhes do par selecionado
         par_detalhes = operacoes_df[operacoes_df['par'] == par_selecionado].iloc[0]
-
-        # Dividir os tickers do par selecionado
         ticker1, ticker2 = par_selecionado.split(" - ")
 
-        # Obter o preço atual de cada ação diretamente do Yahoo Finance
-        preco_acao1 = obter_preco_atual(ticker1)
-        preco_acao2 = obter_preco_atual(ticker2)
+        # Exibir as informações da operação
+        if status_selecionado == "Aberta":
+                    st.markdown(f"### Operação Aberta: {par_selecionado}")
+                    st.markdown(f"**Data de Início:** {par_detalhes['data_inicio']}")
 
-        # Primeira linha: gráficos do Z-Score e dos preços
-        col1, col2 = st.columns(2)
+                    # Colunas para exibir as informações de cada ação
+                    col1, col2 = st.columns(2)
 
-        with col1:
-            # Baixar os dados históricos das ações para calcular o Z-Score
+                    with col1:
+                        # Exibir detalhes da ação 1
+                        st.markdown(f"### {ticker1}")
+                        st.markdown(f"**Quantidade de Ações Vendidas:** {par_detalhes['qtd_acoes1']}")
+                        st.markdown(f"**Preço Inicial de {ticker1}:** R$ {par_detalhes['preco_inicial_acao1']:.2f}")
+                        valor_inicial_acao1 = par_detalhes['preco_inicial_acao1'] * par_detalhes['qtd_acoes1']
+                        st.markdown(f"**Valor Inicial ({ticker1}):** R$ {valor_inicial_acao1:.2f}")
+
+                        # Obter e exibir o preço atual
+                        preco_atual_acao1 = obter_preco_atual(ticker1)
+                        st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_atual_acao1:.2f}")
+                        valor_atual_acao1 = preco_atual_acao1 * par_detalhes['qtd_acoes1']
+                        st.markdown(f"**Valor Atual ({ticker1}):** R$ {valor_atual_acao1:.2f}")
+
+                        # Diferença de valor para a ação 1
+                        diferenca_acao1 = valor_atual_acao1 - valor_inicial_acao1
+                        st.markdown(f"**Diferença de Valor ({ticker1}):** R$ {diferenca_acao1:.2f}")
+
+                    with col2:
+                        # Exibir detalhes da ação 2
+                        st.markdown(f"### {ticker2}")
+                        st.markdown(f"**Quantidade de Ações Compradas:** {par_detalhes['qtd_acoes2']}")
+                        st.markdown(f"**Preço Inicial de {ticker2}:** R$ {par_detalhes['preco_inicial_acao2']:.2f}")
+                        valor_inicial_acao2 = par_detalhes['preco_inicial_acao2'] * par_detalhes['qtd_acoes2']
+                        st.markdown(f"**Valor Inicial ({ticker2}):** R$ {valor_inicial_acao2:.2f}")
+
+                        # Obter e exibir o preço atual
+                        preco_atual_acao2 = obter_preco_atual(ticker2)
+                        st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_atual_acao2:.2f}")
+                        valor_atual_acao2 = preco_atual_acao2 * par_detalhes['qtd_acoes2']
+                        st.markdown(f"**Valor Atual ({ticker2}):** R$ {valor_atual_acao2:.2f}")
+
+                        # Diferença de valor para a ação 2
+                        diferenca_acao2 = valor_atual_acao2 - valor_inicial_acao2
+                        st.markdown(f"**Diferença de Valor ({ticker2}):** R$ {diferenca_acao2:.2f}")
+
+                    # Calcular o resultado total da operação
+                    valor_total_inicial = valor_inicial_acao1 + valor_inicial_acao2
+                    valor_total_atual = valor_atual_acao1 + valor_atual_acao2
+                    resultado_total = valor_total_atual - valor_total_inicial
+
+                    # Exibir o resultado total
+                    st.markdown(f"### Resultado Total da Operação")
+                    st.markdown(f"**Valor Total Inicial:** R$ {valor_total_inicial:.2f}")
+                    st.markdown(f"**Valor Total Atual:** R$ {valor_total_atual:.2f}")
+                    st.markdown(f"**Resultado da Operação:** R$ {resultado_total:.2f}")
+                
+
+        elif status_selecionado == "Analise":
+            # Exibir os gráficos e permitir iniciar a operação
+            st.markdown(f"### Analisando Operação: {par_selecionado}")
             S1 = yf.download(ticker1, period="1y")['Close'].tail(120)
             S2 = yf.download(ticker2, period="1y")['Close'].tail(120)
 
-            # Plotar o gráfico do Z-Score
-            plotar_grafico_zscore(S1, S2)
-
-        with col2:
-            # Exibir as métricas detalhadas do par
-            st.markdown(f"### Detalhes do Par: {par_selecionado}")
-            st.markdown(
-                f"""
-                **Data:** {par_detalhes['data']}  
-                **Z-Score:** {par_detalhes['zscore']:.2f}  
-                **P-Value:** {par_detalhes['pvalue']:.4f}  
-                **Hurst:** {par_detalhes['hurst']:.4f}  
-                **Beta:** {par_detalhes['beta']:.4f}  
-                **Half-Life:** {par_detalhes['half_life']:.2f}  
-                """
-            )
-
-        # Segunda linha: gráficos de preços e cotações recentes
-        col3, col4 = st.columns(2)
-
-        with col3:
-            # Plotar o gráfico dos preços das duas ações
-            plotar_grafico_precos(S1, S2, ticker1, ticker2)
-
-        with col4:
-            # Exibir as cotações mais recentes de cada ação (sem cards, apenas markdown)
-            st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_acao1:.2f}")
-            st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_acao2:.2f}")
-
-        st.markdown("---")
-
-        # Aplicando a cor ao expander
-        st.markdown(
-            """
-            <style>
-            .streamlit-expanderHeader {
-                background-color: #f0f8ff;  /* Azul claro */
-                border: 1px solid #ddd;
-                border-radius: 5px;
-            }
-            .streamlit-expanderContent {
-                background-color: #e6f7ff;  /* Azul claro para o conteúdo */
-            }
-            </style>
-            """, unsafe_allow_html=True
-        )
-
-        # Expander: Calculadora de Operação
-        with st.expander("Calculadora de Operação", expanded=True):
-            col1, col2, col3 = st.columns(3)
-
+            # Gráficos do Z-Score e Preços Normalizados
+            col1, col2 = st.columns(2)
             with col1:
-                st.markdown("### Escolher Lotes")
-
-                # Input para definir a quantidade de lotes vendidos
-                lotes_vendidos = st.number_input(f"Quantidade de Lotes Vendidos ({ticker1}):", min_value=100, step=100, value=100)
-                valor_venda = preco_acao1 * lotes_vendidos
-
-                # Input para definir a quantidade de lotes comprados
-                lotes_comprados = st.number_input(f"Quantidade de Lotes Comprados ({ticker2}):", min_value=100, step=100, value=100)
-                valor_compra = preco_acao2 * lotes_comprados
-
-                # Calcula o saldo remanescente
-                saldo_remanescente = valor_venda - valor_compra
+                st.markdown(f"### Gráfico do Z-Score: {par_selecionado}")
+                plotar_grafico_zscore(S1, S2)
 
             with col2:
-                st.markdown("### Resultados da Operação")
-                st.markdown(f"""
-                - **Valor Vendido ({ticker1}):** R$ {valor_venda:.2f}  
-                - **Valor Comprado ({ticker2}):** R$ {valor_compra:.2f}  
-                - **Saldo Remanescente:** R$ {saldo_remanescente:.2f}
-                """)
+                st.markdown(f"### Gráfico de Preços Normalizados: {ticker1} e {ticker2}")
+                plotar_grafico_precos(S1, S2, ticker1, ticker2)
 
-                # Botão para cancelar a operação
-                if st.button("Cancelar Análise"):
-                    conn = get_connection()
-                    cursor = conn.cursor()
+            # Expander: Calculadora de Operação
+            with st.expander("Calculadora de Operação", expanded=True):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown("### Escolher Lotes")
+                    lotes_vendidos = st.number_input(f"Quantidade de Lotes Vendidos ({ticker1}):", min_value=100, step=100, value=100)
+                    lotes_comprados = st.number_input(f"Quantidade de Lotes Comprados ({ticker2}):", min_value=100, step=100, value=100)
 
-                    # Excluir a operação do banco de dados
-                    cursor.execute("DELETE FROM operacoes WHERE par = ?", (par_selecionado,))
-                    conn.commit()
-                    conn.close()
+                with col2:
+                    # Calcula o valor da venda e compra
+                    preco_venda = obter_preco_atual(ticker1) * lotes_vendidos
+                    preco_compra = obter_preco_atual(ticker2) * lotes_comprados
+                    saldo = preco_venda - preco_compra
+                    st.markdown(f"**Valor Vendido ({ticker1}):** R$ {preco_venda:.2f}")
+                    st.markdown(f"**Valor Comprado ({ticker2}):** R$ {preco_compra:.2f}")
+                    st.markdown(f"**Saldo:** R$ {saldo:.2f}")
 
-                    # Exibir mensagem de sucesso
-                    st.success(f"A operação para o par {par_selecionado} foi cancelada e removida do banco de dados.")
+                with col3:
+                    # Formulário para iniciar operação
+                    with st.form("iniciar_operacao"):
+                        st.markdown("### Iniciar Operação")
+                        st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_venda / lotes_vendidos:.2f}")
+                        st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_compra / lotes_comprados:.2f}")
 
-                    # Exibir uma mensagem para o usuário recarregar a página manualmente
-                    st.info("Por favor, recarregue a página para ver as alterações.")
+                        iniciar_button = st.form_submit_button("Iniciar Operação")
+                        if iniciar_button:
+                            # Atualizar operação no banco de dados
+                            conn = get_connection()
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                            UPDATE operacoes
+                            SET qtd_acoes1 = ?, qtd_acoes2 = ?, preco_inicial_acao1 = ?, preco_inicial_acao2 = ?, status = ?, data_inicio = ?
+                            WHERE par = ?
+                            ''', (lotes_vendidos, lotes_comprados, preco_venda / lotes_vendidos, preco_compra / lotes_comprados, 'aberta', datetime.now().strftime('%Y-%m-%d'), par_selecionado))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Operação iniciada com sucesso para o par {par_selecionado}!")
 
-
-            with col3:
-                # Formulário para iniciar operação
-                with st.form("iniciar_operacao"):
-                    st.markdown("### Iniciar Operação")
-                    st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_acao1:.2f}")
-                    st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_acao2:.2f}")
-                    st.markdown(f"**Quantidade de Lotes Vendidos ({ticker1}):** {lotes_vendidos}")
-                    st.markdown(f"**Quantidade de Lotes Comprados ({ticker2}):** {lotes_comprados}")
-                    
-                    # Botão para iniciar a operação
-                    iniciar_button = st.form_submit_button("Iniciar Operação")
-
-                    if iniciar_button:
-                        st.success("Operação Iniciada com Sucesso!")
     else:
         st.write(f"Não há pares com status '{status_selecionado}' no momento.")
