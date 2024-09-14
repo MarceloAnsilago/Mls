@@ -564,6 +564,7 @@ if selected == "Análise":
                     conn.close()
 
                     st.success(f"Par {par_str} salvo com sucesso para operação na data {data_atual}!")
+                    
 
                 # Adicionar um separador entre os gráficos e as métricas
                 st.markdown("---") 
@@ -616,15 +617,12 @@ if selected == "Análise":
 
 
 
-
-
-
 if selected == "Operações":
     st.title("Operações")
 
     # Opções de status (analise, aberta, fechada)
     status_opcoes = ["Analise", "Aberta", "Fechada"]
-    status_selecionado = st.radio("Selecione o status da operação:", status_opcoes, key="unique_status_radio")
+    status_selecionado = st.radio("Selecione o status da operação:", status_opcoes, key="unique_status_radio_operacoes")
     status_mapeado = status_selecionado.lower()
 
     # Consulta ao banco de dados para buscar pares com o status selecionado
@@ -647,65 +645,8 @@ if selected == "Operações":
         par_detalhes = operacoes_df[operacoes_df['par'] == par_selecionado].iloc[0]
         ticker1, ticker2 = par_selecionado.split(" - ")
 
-        # Exibir as informações da operação
-        if status_selecionado == "Aberta":
-                    st.markdown(f"### Operação Aberta: {par_selecionado}")
-                    st.markdown(f"**Data de Início:** {par_detalhes['data_inicio']}")
-
-                    # Colunas para exibir as informações de cada ação
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        # Exibir detalhes da ação 1
-                        st.markdown(f"### {ticker1}")
-                        st.markdown(f"**Quantidade de Ações Vendidas:** {par_detalhes['qtd_acoes1']}")
-                        st.markdown(f"**Preço Inicial de {ticker1}:** R$ {par_detalhes['preco_inicial_acao1']:.2f}")
-                        valor_inicial_acao1 = par_detalhes['preco_inicial_acao1'] * par_detalhes['qtd_acoes1']
-                        st.markdown(f"**Valor Inicial ({ticker1}):** R$ {valor_inicial_acao1:.2f}")
-
-                        # Obter e exibir o preço atual
-                        preco_atual_acao1 = obter_preco_atual(ticker1)
-                        st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_atual_acao1:.2f}")
-                        valor_atual_acao1 = preco_atual_acao1 * par_detalhes['qtd_acoes1']
-                        st.markdown(f"**Valor Atual ({ticker1}):** R$ {valor_atual_acao1:.2f}")
-
-                        # Diferença de valor para a ação 1
-                        diferenca_acao1 = valor_atual_acao1 - valor_inicial_acao1
-                        st.markdown(f"**Diferença de Valor ({ticker1}):** R$ {diferenca_acao1:.2f}")
-
-                    with col2:
-                        # Exibir detalhes da ação 2
-                        st.markdown(f"### {ticker2}")
-                        st.markdown(f"**Quantidade de Ações Compradas:** {par_detalhes['qtd_acoes2']}")
-                        st.markdown(f"**Preço Inicial de {ticker2}:** R$ {par_detalhes['preco_inicial_acao2']:.2f}")
-                        valor_inicial_acao2 = par_detalhes['preco_inicial_acao2'] * par_detalhes['qtd_acoes2']
-                        st.markdown(f"**Valor Inicial ({ticker2}):** R$ {valor_inicial_acao2:.2f}")
-
-                        # Obter e exibir o preço atual
-                        preco_atual_acao2 = obter_preco_atual(ticker2)
-                        st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_atual_acao2:.2f}")
-                        valor_atual_acao2 = preco_atual_acao2 * par_detalhes['qtd_acoes2']
-                        st.markdown(f"**Valor Atual ({ticker2}):** R$ {valor_atual_acao2:.2f}")
-
-                        # Diferença de valor para a ação 2
-                        diferenca_acao2 = valor_atual_acao2 - valor_inicial_acao2
-                        st.markdown(f"**Diferença de Valor ({ticker2}):** R$ {diferenca_acao2:.2f}")
-
-                    # Calcular o resultado total da operação
-                    valor_total_inicial = valor_inicial_acao1 + valor_inicial_acao2
-                    valor_total_atual = valor_atual_acao1 + valor_atual_acao2
-                    resultado_total = valor_total_atual - valor_total_inicial
-
-                    # Exibir o resultado total
-                    st.markdown(f"### Resultado Total da Operação")
-                    st.markdown(f"**Valor Total Inicial:** R$ {valor_total_inicial:.2f}")
-                    st.markdown(f"**Valor Total Atual:** R$ {valor_total_atual:.2f}")
-                    st.markdown(f"**Resultado da Operação:** R$ {resultado_total:.2f}")
-                
-
-        elif status_selecionado == "Analise":
-            # Exibir os gráficos e permitir iniciar a operação
-            st.markdown(f"### Analisando Operação: {par_selecionado}")
+        # Exibir os gráficos e permitir iniciar a operação se for status "Analise"
+        if status_selecionado == "Analise":
             S1 = yf.download(ticker1, period="1y")['Close'].tail(120)
             S2 = yf.download(ticker2, period="1y")['Close'].tail(120)
 
@@ -722,10 +663,11 @@ if selected == "Operações":
             # Expander: Calculadora de Operação
             with st.expander("Calculadora de Operação", expanded=True):
                 col1, col2, col3 = st.columns(3)
+
                 with col1:
                     st.markdown("### Escolher Lotes")
-                    lotes_vendidos = st.number_input(f"Quantidade de Lotes Vendidos ({ticker1}):", min_value=100, step=100, value=100)
-                    lotes_comprados = st.number_input(f"Quantidade de Lotes Comprados ({ticker2}):", min_value=100, step=100, value=100)
+                    lotes_vendidos = st.number_input(f"Quantidade de Lotes Vendidos ({ticker1}):", min_value=100, step=100, value=100, key="lotes_vendidos")
+                    lotes_comprados = st.number_input(f"Quantidade de Lotes Comprados ({ticker2}):", min_value=100, step=100, value=100, key="lotes_comprados")
 
                 with col2:
                     # Calcula o valor da venda e compra
@@ -737,9 +679,9 @@ if selected == "Operações":
                     st.markdown(f"**Saldo:** R$ {saldo:.2f}")
 
                 with col3:
-                    # Formulário para iniciar operação
+                    # Formulário para iniciar operação na terceira coluna
                     with st.form("iniciar_operacao"):
-                        st.markdown("### Iniciar Operação")
+                        st.markdown(f"### Iniciar Operação")
                         st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_venda / lotes_vendidos:.2f}")
                         st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_compra / lotes_comprados:.2f}")
 
@@ -757,5 +699,69 @@ if selected == "Operações":
                             conn.close()
                             st.success(f"Operação iniciada com sucesso para o par {par_selecionado}!")
 
+                # Botão para cancelar a análise (fora do formulário)
+                cancelar_button = st.button("Cancelar Análise")
+                if cancelar_button:
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    # Excluir a operação do banco de dados
+                    cursor.execute("DELETE FROM operacoes WHERE par = ?", (par_selecionado,))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"A operação para o par {par_selecionado} foi cancelada e removida do banco de dados.")
+
+        elif status_selecionado == "Aberta":
+            st.markdown(f"### Operação Aberta: {par_selecionado}")
+            st.markdown(f"**Data de Início:** {par_detalhes['data_inicio']}")
+
+            # Colunas para exibir as informações de cada ação
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Exibir detalhes da ação 1
+                st.markdown(f"### {ticker1}")
+                st.markdown(f"**Quantidade de Ações Vendidas:** {par_detalhes['qtd_acoes1']}")
+                st.markdown(f"**Preço Inicial de {ticker1}:** R$ {par_detalhes['preco_inicial_acao1']:.2f}")
+                valor_inicial_acao1 = par_detalhes['preco_inicial_acao1'] * par_detalhes['qtd_acoes1']
+                st.markdown(f"**Valor Inicial ({ticker1}):** R$ {valor_inicial_acao1:.2f}")
+
+                # Obter e exibir o preço atual
+                preco_atual_acao1 = obter_preco_atual(ticker1)
+                st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_atual_acao1:.2f}")
+                valor_atual_acao1 = preco_atual_acao1 * par_detalhes['qtd_acoes1']
+                st.markdown(f"**Valor Atual ({ticker1}):** R$ {valor_atual_acao1:.2f}")
+
+                # Diferença de valor para a ação 1
+                diferenca_acao1 = valor_atual_acao1 - valor_inicial_acao1
+                st.markdown(f"**Diferença de Valor ({ticker1}):** R$ {diferenca_acao1:.2f}")
+
+            with col2:
+                # Exibir detalhes da ação 2
+                st.markdown(f"### {ticker2}")
+                st.markdown(f"**Quantidade de Ações Compradas:** {par_detalhes['qtd_acoes2']}")
+                st.markdown(f"**Preço Inicial de {ticker2}:** R$ {par_detalhes['preco_inicial_acao2']:.2f}")
+                valor_inicial_acao2 = par_detalhes['preco_inicial_acao2'] * par_detalhes['qtd_acoes2']
+                st.markdown(f"**Valor Inicial ({ticker2}):** R$ {valor_inicial_acao2:.2f}")
+
+                # Obter e exibir o preço atual
+                preco_atual_acao2 = obter_preco_atual(ticker2)
+                st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_atual_acao2:.2f}")
+                valor_atual_acao2 = preco_atual_acao2 * par_detalhes['qtd_acoes2']
+                st.markdown(f"**Valor Atual ({ticker2}):** R$ {valor_atual_acao2:.2f}")
+
+                # Diferença de valor para a ação 2
+                diferenca_acao2 = valor_atual_acao2 - valor_inicial_acao2
+                st.markdown(f"**Diferença de Valor ({ticker2}):** R$ {diferenca_acao2:.2f}")
+
+            # Calcular o resultado total da operação
+            valor_total_inicial = valor_inicial_acao1 + valor_inicial_acao2
+            valor_total_atual = valor_atual_acao1 + valor_atual_acao2
+            resultado_total = valor_total_atual - valor_total_inicial
+
+            # Exibir o resultado total
+            st.markdown(f"### Resultado Total da Operação")
+            st.markdown(f"**Valor Total Inicial:** R$ {valor_total_inicial:.2f}")
+            st.markdown(f"**Valor Total Atual:** R$ {valor_total_atual:.2f}")
+            st.markdown(f"**Resultado da Operação:** R$ {resultado_total:.2f}")
     else:
         st.write(f"Não há pares com status '{status_selecionado}' no momento.")
