@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from sklearn.linear_model import LinearRegression
 import time
+import mplfinance as mpf
 
 # Configurações da Página
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
@@ -374,7 +375,7 @@ if selected == "Cotações":
     with st.expander("Adicionar Ação"):
         with st.form(key='add_stock_form'):
             nome_acao = st.text_input("Nome da Ação (Ticker)", help="Digite o código da ação, por exemplo, PETR4 para Petrobras.")
-            periodos = st.number_input("Períodos (em dias)", min_value=1, max_value=365, value=150, help="Número de dias para baixar cotações históricas.")
+            periodos = st.number_input("Períodos (em dias)", min_value=1, max_value=365, value=200, help="Número de dias para baixar cotações históricas.")
             submit_button = st.form_submit_button(label="Adicionar Ação e Baixar Cotações")
         if submit_button:
             if nome_acao:
@@ -645,20 +646,55 @@ if selected == "Operações":
         par_detalhes = operacoes_df[operacoes_df['par'] == par_selecionado].iloc[0]
         ticker1, ticker2 = par_selecionado.split(" - ")
 
+        # Recuperar numero_periodos da análise ou definir um padrão
+        if 'numero_periodos' in st.session_state:
+            numero_periodos = st.session_state['numero_periodos']
+        else:
+            numero_periodos = 120  # Valor padrão se não estiver no session_state
+
+        # Baixar dados atuais para os dois tickers, garantindo que tenham o mesmo número de períodos
+        periodo = f"{numero_periodos}d"
+        S1 = yf.download(ticker1, period=periodo)['Close']
+        S2 = yf.download(ticker2, period=periodo)['Close']
+
+        # Verificar se os dados foram baixados corretamente
+        if S1.empty or S2.empty:
+            st.error("Erro ao baixar os dados dos tickers selecionados.")
+            st.stop()
+
         # Exibir os gráficos e permitir iniciar a operação se for status "Analise"
         if status_selecionado == "Analise":
-            S1 = yf.download(ticker1, period="1y")['Close'].tail(120)
-            S2 = yf.download(ticker2, period="1y")['Close'].tail(120)
-
-            # Gráficos do Z-Score e Preços Normalizados
+            # Gráfico do Z-Score
             col1, col2 = st.columns(2)
+
             with col1:
                 st.markdown(f"### Gráfico do Z-Score: {par_selecionado}")
-                plotar_grafico_zscore(S1, S2)
+                ratios = S1 / S2
+                zscore_series = (ratios - ratios.mean()) / ratios.std()
+                plt.figure(figsize=(10, 5))  # Tamanho ajustado
+                plt.plot(zscore_series, label='Z-Score')
+                plt.axhline(0, color='black', linestyle='--')
+                plt.axhline(2, color='red', linestyle='--')
+                plt.axhline(-2, color='green', linestyle='--')
+                plt.legend(loc='best')
+                plt.xlabel('Data')
+                plt.ylabel('Z-Score')
+                plt.xticks(rotation=45, fontsize=6)
+                st.pyplot(plt)
 
+            # Gráfico de Preços Normalizados
             with col2:
                 st.markdown(f"### Gráfico de Preços Normalizados: {ticker1} e {ticker2}")
-                plotar_grafico_precos(S1, S2, ticker1, ticker2)
+                S1_normalizado = S1 / S1.iloc[0]
+                S2_normalizado = S2 / S2.iloc[0]
+                plt.figure(figsize=(10, 5))
+                plt.plot(S1_normalizado, label=ticker1)
+                plt.plot(S2_normalizado, label=ticker2)
+                plt.legend(loc='best')
+                plt.xlabel('Data')
+                plt.ylabel('Preço Normalizado')
+                plt.xticks(rotation=45, fontsize=6)
+                st.pyplot(plt)
 
             # Expander: Calculadora de Operação
             with st.expander("Calculadora de Operação", expanded=True):
@@ -666,8 +702,8 @@ if selected == "Operações":
 
                 with col1:
                     st.markdown("### Escolher Lotes")
-                    lotes_vendidos = st.number_input(f"Quantidade de Lotes Vendidos ({ticker1}):", min_value=100, step=100, value=100, key="lotes_vendidos")
-                    lotes_comprados = st.number_input(f"Quantidade de Lotes Comprados ({ticker2}):", min_value=100, step=100, value=100, key="lotes_comprados")
+                    lotes_vendidos = st.number_input(f"Quantidade de Ações Vendidas ({ticker1}):", min_value=1, step=1, value=100, key="lotes_vendidos")
+                    lotes_comprados = st.number_input(f"Quantidade de Ações Compradas ({ticker2}):", min_value=1, step=1, value=100, key="lotes_comprados")
 
                 with col2:
                     # Calcula o valor da venda e compra
@@ -763,5 +799,105 @@ if selected == "Operações":
             st.markdown(f"**Valor Total Inicial:** R$ {valor_total_inicial:.2f}")
             st.markdown(f"**Valor Total Atual:** R$ {valor_total_atual:.2f}")
             st.markdown(f"**Resultado da Operação:** R$ {resultado_total:.2f}")
-    else:
-        st.write(f"Não há pares com status '{status_selecionado}' no momento.")
+
+            # Gráfico do Z-Score Atualizado
+            st.markdown(f"### Acompanhamento do Z-Score Atual: {par_selecionado}")
+            
+            # Baixar dados atuais dos dois tickers para acompanhamento
+            S1 = yf.download(ticker1, period='120d')['Close']
+            S2 = yf.download(ticker2, period='120d')['Close']
+            
+            if S1.empty or S2.empty:
+                st.error("Erro ao baixar os dados para acompanhamento do Z-Score.")
+            else:
+                # Calcular o Z-Score com dados atualizados
+                ratios = S1 / S2
+                zscore_series = (ratios - ratios.mean()) / ratios.std()
+
+                # Plotar o gráfico do Z-Score
+                plt.figure(figsize=(10, 3))  # Tamanho ajustado para 10x3
+                plt.plot(zscore_series, label='Z-Score Atual')
+                plt.axhline(0, color='black', linestyle='--')
+                plt.axhline(2, color='red', linestyle='--')
+                plt.axhline(-2, color='green', linestyle='--')
+                plt.legend(loc='best')
+                plt.xlabel('Data')
+                plt.ylabel('Z-Score')
+                plt.xticks(rotation=45, fontsize=6)
+                st.pyplot(plt)
+
+                # Gráfico de Preços Normalizados logo abaixo do Z-Score
+                st.markdown(f"### Gráfico de Preços Normalizados: {ticker1} e {ticker2}")
+                S1_normalizado = S1 / S1.iloc[0]
+                S2_normalizado = S2 / S2.iloc[0]
+                plt.figure(figsize=(10, 3))  # Tamanho ajustado para 10x3
+                plt.plot(S1_normalizado, label=ticker1)
+                plt.plot(S2_normalizado, label=ticker2)
+                plt.legend(loc='best')
+                plt.xlabel('Data')
+                plt.ylabel('Preço Normalizado')
+                plt.xticks(rotation=45, fontsize=6)
+                st.pyplot(plt)
+
+                
+
+             
+
+        # Adicionando a divisão em colunas
+        st.markdown(f"### Gráficos Candlestick dos Últimos 10 Períodos")
+
+        col1, col2 = st.columns(2)
+
+        # Adicionando o botão para gerar os gráficos de candlestick
+        gerar_graficos = st.button("Gerar Gráfico de Candlestick")
+
+        # Só gera os gráficos se o botão for clicado
+        if gerar_graficos:
+            
+            # Função para verificar se os dados possuem as colunas necessárias para candlestick
+            def verificar_dados_candlestick(df):
+                return all(col in df.columns for col in ['Open', 'High', 'Low', 'Close', 'Volume'])
+
+            # Gráfico de Candlestick para o ticker1
+            with col1:
+                st.markdown(f"#### Candlestick: {ticker1}")
+                # Baixando dados com colunas necessárias para o candlestick
+                S1_candles = yf.download(ticker1, period='10d', interval='1d')
+                
+                # Garantir que os dados possuem colunas de Candlestick
+                if verificar_dados_candlestick(S1_candles):
+                    fig, (ax, ax_volume) = plt.subplots(2, sharex=True, gridspec_kw={'height_ratios': [3, 1]}, figsize=(10, 6))  # Criar dois eixos
+                    mpf.plot(S1_candles, type='candle', style='charles', ax=ax, volume=ax_volume)  # Passar ambos os eixos
+                    st.pyplot(fig)  # Exibir o gráfico no Streamlit
+                else:
+                    st.error(f"Erro ao baixar dados de candlestick para {ticker1}. Verifique se o ativo possui dados suficientes.")
+
+            # Gráfico de Candlestick para o ticker2
+            with col2:
+                st.markdown(f"#### Candlestick: {ticker2}")
+                # Baixando dados com colunas necessárias para o candlestick
+                S2_candles = yf.download(ticker2, period='10d', interval='1d')
+
+                # Garantir que os dados possuem colunas de Candlestick
+                if verificar_dados_candlestick(S2_candles):
+                    fig, (ax, ax_volume) = plt.subplots(2, sharex=True, gridspec_kw={'height_ratios': [3, 1]}, figsize=(10, 6))  # Criar dois eixos
+                    mpf.plot(S2_candles, type='candle', style='charles', ax=ax, volume=ax_volume)  # Passar ambos os eixos
+                    st.pyplot(fig)  # Exibir o gráfico no Streamlit
+                else:
+                    st.error(f"Erro ao baixar dados de candlestick para {ticker2}. Verifique se o ativo possui dados suficientes.")
+
+                        # Botão para encerrar a operação
+            encerrar_button = st.button("Encerrar Operação")
+            if encerrar_button:
+                conn = get_connection()
+                cursor = conn.cursor()
+                # Atualizar o status da operação para 'fechada' e registrar a data de encerramento
+                data_encerramento = datetime.now().strftime('%Y-%m-%d')
+                cursor.execute('''
+                UPDATE operacoes
+                SET status = ?, data_encerramento = ?
+                WHERE par = ?
+                ''', ('fechada', data_encerramento, par_selecionado))
+                conn.commit()
+                conn.close()
+                st.success(f"A operação para o par {par_selecionado} foi encerrada com sucesso!")
