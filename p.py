@@ -1,4 +1,4 @@
-import sqlite3
+
 import pandas as pd
 import streamlit as st
 from streamlit_option_menu import option_menu
@@ -16,91 +16,40 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from sklearn.linear_model import LinearRegression
 import time
-import mplfinance as mpf
+import mplfinance as mpf               
+from io import BytesIO
+                  
 
-# Configurações da Página
+# Inicializando o estado global para as cotações
+if "global_cotacoes" not in st.session_state:
+    st.session_state["global_cotacoes"] = pd.DataFrame()
+
+
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
 logo_image = Image.open("logos/LogoApp.jpg")
 
-# Função para abrir a conexão com o banco de dados
-def get_connection():
-    conn = sqlite3.connect('cotacoes.db')
-    return conn
-
-# Função para atualizar cotações
-def atualizar_cotacoes():
-    with st.spinner('Atualizando cotações...'):
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        # Buscar todos os tickers no banco de dados
-        cursor.execute("SELECT DISTINCT ticker FROM cotacoes")
-        tickers = [row[0] for row in cursor.fetchall()]
-
-        for ticker in tickers:
-            # Verificar a data mais recente para cada ticker no banco de dados
-            cursor.execute("SELECT MAX(data) FROM cotacoes WHERE ticker = ?", (ticker,))
-            ultima_data = cursor.fetchone()[0]
-
-            if ultima_data:
-                # Se houver uma data no banco, buscar cotações a partir do dia seguinte
-                start_date = datetime.strptime(ultima_data, "%Y-%m-%d") + timedelta(days=1)
-            else:
-                # Se não houver cotações, buscar desde um período padrão, por exemplo, 1 ano atrás
-                start_date = datetime.now() - timedelta(days=365)
-
-            # Buscar as cotações do Yahoo Finance a partir da data mais recente até hoje
-            dados = yf.download(ticker, start=start_date.strftime("%Y-%m-%d"), end=datetime.now().strftime("%Y-%m-%d"))['Close']
-
-            # Inserir novas cotações no banco de dados
-            for data, fechamento in dados.items():
-                cursor.execute('''
-                INSERT OR IGNORE INTO cotacoes (ticker, data, fechamento) VALUES (?, ?, ?)
-                ''', (ticker, data.strftime('%Y-%m-%d'), fechamento))
-
-        conn.commit()
-        conn.close()
-    st.success("Cotações atualizadas com sucesso!")
-
-# Adicionar um botão para atualização
-if st.button("Atualizar Cotações"):
-    atualizar_cotacoes()
-
-# Função para carregar as cotações mais recentes
-def carregar_acoes():
-    conn = get_connection()
-    query = """
-    SELECT ticker, MAX(data) as data, fechamento 
-    FROM cotacoes 
-    GROUP BY ticker 
-    ORDER BY ticker
-    """
-    cotacoes_df = pd.read_sql(query, conn)
-    conn.close()
-    return cotacoes_df
-
 # Função para carregar o ícone
 def carregar_icone(ticker):
-    # Verifica se o quinto caractere é um número
+    # Verifica o formato do ticker e ajusta o nome do arquivo
     if len(ticker) >= 5 and ticker[4].isdigit():
-        # Remove o sufixo ".SA" e o quinto caractere se for numérico
-        ticker_base = ticker[:4]  # Mantém apenas os quatro primeiros caracteres
+        ticker_base = ticker[:4]
     else:
         ticker_base = ticker.replace(".SA", "")
 
+    # Caminho do arquivo do ícone
     icon_path = f"logos/{ticker_base}.jpg"
-    
+
     if os.path.exists(icon_path):
         try:
             with open(icon_path, "rb") as image_file:
                 encoded_string = base64.b64encode(image_file.read()).decode()
                 return f"data:image/jpg;base64,{encoded_string}"
         except Exception as e:
-            print(f"Erro ao carregar a imagem {ticker_base}: {e}")
             return None
     else:
-        print(f"Imagem não encontrada para: {ticker_base}")
         return None
+
+
 
 # Função para calcular Half-Life
 def half_life_calc(ts):
@@ -150,24 +99,36 @@ def calcular_beta_movel(S1, S2, window=40):
 
 # Exibir o gráfico de beta móvel
 def plotar_beta_movel(S1, S2, window=40):
-    beta_movel = calcular_beta_movel(S1, S2, window)
+    try:
+        returns_S1 = np.log(S1 / S1.shift(1)).dropna()
+        returns_S2 = np.log(S2 / S2.shift(1)).dropna()
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(beta_movel, label=f'Beta Móvel ({window} períodos)')
-    plt.axhline(0, color='black', linestyle='--')
-    plt.title(f'Beta Móvel ({window} períodos')
-    plt.xlabel('Data')
-    plt.ylabel('Beta')
-    plt.legend()
+        betas = []
+        index_values = returns_S1.index[window - 1:]  # Ajustar para a janela
 
-    # Ajustar as datas para exibição transversal e diminuir a fonte
-    plt.xticks(rotation=45, fontsize=6)
-    
-    # Reduzir a frequência dos rótulos exibidos no eixo X
-    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+        for i in range(window, len(returns_S1) + 1):
+            reg = LinearRegression().fit(
+                returns_S2[i - window:i].values.reshape(-1, 1),
+                returns_S1[i - window:i].values
+            )
+            betas.append(reg.coef_[0])
 
-    plt.grid(True)
-    st.pyplot(plt)
+        beta_movel = pd.Series(betas, index=index_values)
+
+        # Plotar o gráfico de beta móvel
+        plt.figure(figsize=(10, 5))
+        plt.plot(beta_movel, label=f'Beta Móvel ({window} períodos)')
+        plt.axhline(0, color='black', linestyle='--')
+        plt.title(f'Beta Móvel ({window} períodos)')
+        plt.xlabel('Data')
+        plt.ylabel('Beta')
+        plt.legend()
+        plt.xticks(rotation=45, fontsize=6)
+        plt.grid(True)
+        st.pyplot(plt)
+    except Exception as e:
+        st.error(f"Erro ao calcular ou plotar o beta móvel: {e}")
+
 
 # Exibir o gráfico de dispersão entre os dois ativos
 def plotar_grafico_dispersao(S1, S2):
@@ -179,18 +140,6 @@ def plotar_grafico_dispersao(S1, S2):
     plt.grid(True)
     st.pyplot(plt)
 
-# Função para carregar todas as cotações do banco de dados
-def carregar_todas_cotacoes():
-    conn = get_connection()
-    query = """
-    SELECT data, ticker, fechamento 
-    FROM cotacoes 
-    ORDER BY data DESC
-    """
-    cotacoes_df = pd.read_sql(query, conn)
-    conn.close()
-    return cotacoes_df
-# Função para obter o preço atual de uma ação usando yfinance
 
 def obter_preco_atual(ticker):
     dados = yf.download(ticker, period="1d")  # Baixar o dado mais recente
@@ -315,24 +264,32 @@ def plotar_grafico_zscore(S1, S2):
     st.pyplot(plt)
 
 # Função para exibir a métrica no formato de cartão
+
 def exibir_metrica_cartao(ticker, ultimo_preco, ultima_data, icone=None):
+    icone_html = (
+        f'<img src="{icone}" style="max-width: 100px; max-height: 100px; object-fit: contain;">'
+        if icone else '<p style="color: red;">Sem Ícone</p>'
+    )
+
     st.markdown(
         f"""
-        <div style="border: 1px solid #ddd; border-radius: 10px; padding: 10px; text-align: center; background-color: #f9f9f9; height: 250px; margin-bottom: 15px; display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="border: 1px solid #ddd; border-radius: 10px; padding: 10px; text-align: center; background-color: #f9f9f9; height: 300px; margin-bottom: 15px; display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-                <h4 style="margin: 0;">{ticker.replace(".SA", "")}</h4>
+                <h2 style="margin: 0;">{ticker}</h2> <!-- Aumentei a fonte do título -->
                 <hr style="border: none; border-top: 2px solid red; margin: 5px 0 10px 0;">
             </div>
             <div style="flex-grow: 1; display: flex; justify-content: center; align-items: center;">
-                {f'<img src="{icone}" style="max-width: 100%; max-height: 80px; object-fit: contain;">' if icone else ''}
+                {icone_html} <!-- Ícone com altura ajustada -->
             </div>
             <div style="margin-top: 10px; text-align: center;">
                 <h6 style="font-size: 14px; color: #888; margin-bottom: 4px;">Última Cotação ({ultima_data})</h6>
                 <h3 style="margin: 0; font-size: 24px;">R$ {ultimo_preco:.2f}</h3>
             </div>
         </div>
-        """, unsafe_allow_html=True
+        """,
+        unsafe_allow_html=True
     )
+
 
 # Menu Lateral
 with st.sidebar:
@@ -345,91 +302,128 @@ with st.sidebar:
         default_index=0,  # seleciona a aba 'Página Inicial'
     )
 
-# Página Inicial
+# Aba "Ações Acompanhadas"
 if selected == "Página Inicial":
     st.title("Ações Acompanhadas")
 
-    # Carregar as cotações mais recentes
-    cotacoes_df = carregar_acoes()
+    # Verificar se o DataFrame global tem dados
+    if "global_cotacoes" in st.session_state and not st.session_state["global_cotacoes"].empty:
+        # DataFrame global com as cotações
+        cotacoes_df = st.session_state["global_cotacoes"].copy()
 
-    # Exibir as métricas em 5 colunas com espaçamento de 5px
-    cols = st.columns(5, gap="small")
+        # Verificar se o índice é chamado 'Date' e transformá-lo em coluna
+        if "Date" not in cotacoes_df.columns:
+            cotacoes_df.reset_index(inplace=True)
 
-    for index, row in cotacoes_df.iterrows():
-        ticker = row['ticker']
-        ultimo_preco = row['fechamento']
-        ultima_data = row['data']
+        # Garantir que a coluna "Date" exista
+        if "Date" in cotacoes_df.columns:
+            # Preparar os dados para exibição (última cotação de cada ticker)
+            cotacoes_df = cotacoes_df.melt(id_vars=["Date"], var_name="ticker", value_name="fechamento")
+            cotacoes_df = cotacoes_df.dropna().sort_values(by=["ticker", "Date"], ascending=[True, False])
+            cotacoes_df = cotacoes_df.groupby("ticker").first().reset_index()
 
-        # Carregar o ícone da ação
-        icone = carregar_icone(ticker)
+            # Exibir as métricas em 5 colunas com espaçamento de 5px
+            cols = st.columns(5, gap="small")
 
-        # Exibir a métrica no formato de cartão usando a função reutilizável
-        with cols[index % 5]:
-            exibir_metrica_cartao(ticker, ultimo_preco, ultima_data, icone)
+            for index, row in cotacoes_df.iterrows():
+                ticker = row['ticker']
+                ultimo_preco = row['fechamento']
+                ultima_data = row['Date']
 
+                # **Carregar ícone do ticker**
+                icone = carregar_icone(ticker)
 
-# Página de Cotações
-if selected == "Cotações":
-    st.title("Cotações")
-    # Expander com Formulário
-    with st.expander("Adicionar Ação"):
-        with st.form(key='add_stock_form'):
-            nome_acao = st.text_input("Nome da Ação (Ticker)", help="Digite o código da ação, por exemplo, PETR4 para Petrobras.")
-            periodos = st.number_input("Períodos (em dias)", min_value=1, max_value=365, value=200, help="Número de dias para baixar cotações históricas.")
-            submit_button = st.form_submit_button(label="Adicionar Ação e Baixar Cotações")
-        if submit_button:
-            if nome_acao:
-                nome_acao = nome_acao.upper()
-                if not nome_acao.endswith(".SA"):
-                    nome_acao += ".SA"
-                
-                if nome_acao in [acao[0] for acao in st.session_state.get('acoes_adicionadas', [])]:
-                    st.warning(f"Ação {nome_acao} já foi adicionada anteriormente.")
-                else:
-                    try:
-                        st.write(f"Baixando cotações para {nome_acao}...")
-                        dados = yf.download(nome_acao, period=f"{periodos}d")['Close']
-                        if dados.empty:
-                            st.error(f"Erro: Nenhum dado encontrado para {nome_acao}. Verifique o ticker.")
-                        else:
-                            dados.name = nome_acao
-                            # Salvar as cotações no banco de dados
-                            conn = get_connection()
-                            for data, fechamento in dados.items():
-                                cursor = conn.cursor()
-                                cursor.execute('''
-                                INSERT OR IGNORE INTO cotacoes (ticker, data, fechamento) VALUES (?, ?, ?)
-                                ''', (nome_acao, data.strftime('%Y-%m-%d'), fechamento))
-                            conn.commit()
-                            conn.close()
-                            st.session_state.setdefault('acoes_adicionadas', []).append((nome_acao, periodos))
-                            st.success(f"Ação {nome_acao} adicionada com {periodos} períodos.")
-                    except Exception as e:
-                        st.error(f"Erro ao baixar cotações para {nome_acao}: {e}")
-            else:
-                st.error("O nome da ação é obrigatório!")
-    # Exibição das Cotações em uma Grade (Grid)
-    st.subheader("Preços de Fechamento das Ações")
-    conn = get_connection()
-    query = "SELECT data, ticker, fechamento FROM cotacoes ORDER BY data DESC"
-    cotacoes_df = pd.read_sql(query, conn)
-    conn.close()
-    if not cotacoes_df.empty:
-        cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
-        # Configurando a grade (grid) com st-aggrid
-        gb = GridOptionsBuilder.from_dataframe(cotacoes_pivot.reset_index())
-        gb.configure_pagination(paginationAutoPageSize=True)  # Habilitar paginação
-        gb.configure_side_bar()  # Adicionar barra lateral para filtros
-        gb.configure_default_column(groupable=True, value=True, enableRowGroup=True, editable=True)
-        gridOptions = gb.build()
-        AgGrid(cotacoes_pivot.reset_index(), gridOptions=gridOptions, enable_enterprise_modules=True)
+                # Exibir a métrica no formato de cartão
+                with cols[index % 5]:
+                    exibir_metrica_cartao(ticker, ultimo_preco, ultima_data, icone)
+        else:
+            st.error("A coluna de datas ('Date') não foi encontrada no DataFrame.")
     else:
-        st.write("Nenhuma cotação disponível ainda.")
-# Página de Análise
+        st.warning("Nenhuma cotação carregada. Por favor, carregue as cotações na aba 'Cotações'.")
+
+# Aba de Cotações
+if selected == "Cotações":
+    st.title("Cotações de Ações")
+
+    # Upload do arquivo TXT com tickers
+    st.markdown("### Upload do Arquivo com Tickers")
+    uploaded_file = st.file_uploader(
+        "Envie um arquivo TXT com os tickers das ações (um por linha):", 
+        type="txt", 
+        key="file_uploader_cotacoes"
+    )
+
+    # Entrada do número de períodos para buscar cotações
+    num_periodos = st.number_input(
+        "Número de Períodos (em dias) para Buscar Cotações",
+        min_value=1,
+        max_value=365,
+        value=200,
+        step=1,
+        key="number_input_periodos"
+    )
+
+    # Botão para processar e exibir as cotações
+    if st.button("Carregar Cotações", key="botao_carregar_cotacoes"):
+        if uploaded_file:
+            # Ler os tickers do arquivo TXT
+            tickers = uploaded_file.read().decode('utf-8').splitlines()
+            tickers = [ticker.strip().upper() for ticker in tickers if ticker.strip()]
+            
+            if tickers:
+                # Criar um DataFrame temporário para armazenar novas cotações
+                new_cotacoes = pd.DataFrame()
+
+                progress_bar = st.progress(0)  # Barra de progresso
+                status_text = st.empty()  # Espaço para texto dinâmico
+
+                for idx, ticker in enumerate(tickers):
+                    try:
+                        status_text.text(f"Baixando cotações para {ticker}...")
+                        dados = yf.download(ticker, period=f"{num_periodos}d")['Close']
+                        dados.name = ticker  # Renomear a série com o ticker
+                        new_cotacoes = pd.concat([new_cotacoes, dados], axis=1)
+                    except Exception as e:
+                        st.error(f"Erro ao buscar cotações para {ticker}: {e}")
+
+                    # Atualizar barra de progresso
+                    progress_bar.progress((idx + 1) / len(tickers))
+                
+                # Remover status e barra após conclusão
+                status_text.empty()
+                progress_bar.empty()
+
+                # Atualizar o DataFrame global no session_state
+                if not new_cotacoes.empty:
+                    # Formatar o índice de datas antes de atualizar o DataFrame global
+                    if isinstance(new_cotacoes.index, pd.DatetimeIndex):
+                        new_cotacoes.index = new_cotacoes.index.strftime("%Y-%m-%d")
+                    new_cotacoes.index.name = "Date"  # Nomear o índice como 'Date'
+
+                    # Concatenar os dados ao DataFrame global, removendo duplicatas
+                    st.session_state["global_cotacoes"] = pd.concat(
+                        [st.session_state["global_cotacoes"], new_cotacoes], axis=1
+                    ).loc[:, ~pd.concat(
+                        [st.session_state["global_cotacoes"], new_cotacoes], axis=1
+                    ).columns.duplicated()]
+                    st.success("Cotações carregadas com sucesso!")
+            else:
+                st.error("O arquivo está vazio ou não contém tickers válidos.")
+        else:
+            st.error("Por favor, envie um arquivo TXT com os tickers das ações.")
+
+    # Exibir o DataFrame global no Streamlit, se não estiver vazio
+    if not st.session_state["global_cotacoes"].empty:
+        df_para_exibir = st.session_state["global_cotacoes"].reset_index()
+        st.markdown("### Cotações Carregadas")
+        st.dataframe(df_para_exibir)
+    else:
+        st.warning("Nenhuma cotação foi carregada ainda.")
 
 
 if selected == "Análise":
     st.title("Análise de Cointegração de Ações")
+
     # Seleção de parâmetros para análise
     with st.form(key='analysis_form'):
         numero_periodos = st.number_input(
@@ -441,23 +435,37 @@ if selected == "Análise":
         zscore_threshold_upper = st.number_input("Limite Superior do Z-Score", value=2.0)
         zscore_threshold_lower = st.number_input("Limite Inferior do Z-Score", value=-2.0)
         submit_button = st.form_submit_button(label="Analisar Pares Cointegrados")
+
     if submit_button or 'cotacoes_pivot' in st.session_state:
         if submit_button:
-            cotacoes_df = carregar_todas_cotacoes()
-            # Transformar os dados em um formato adequado para a cointegração
-            cotacoes_pivot = cotacoes_df.pivot(index='data', columns='ticker', values='fechamento')
-            # Selecionar os últimos numero_periodos (mais recentes)
-            cotacoes_pivot = cotacoes_pivot.tail(numero_periodos)
+            # Verificar se o DataFrame global existe no session_state
+            if "global_cotacoes" not in st.session_state or st.session_state["global_cotacoes"].empty:
+                st.error("Nenhuma cotação carregada. Por favor, carregue as cotações antes de realizar a análise.")
+                st.stop()
+
+            # Obter o DataFrame global das cotações
+            cotacoes_df = st.session_state["global_cotacoes"]
+
+            # Verificar se a coluna 'Date' está presente e transformá-la no índice
+            if "Date" in cotacoes_df.columns:
+                cotacoes_df.set_index("Date", inplace=True)
+
+            # Transformar os dados no formato adequado para a cointegração
+            cotacoes_pivot = cotacoes_df.tail(numero_periodos)
+
             # Armazenar no session state
             st.session_state['cotacoes_pivot'] = cotacoes_pivot
+
         # Pegar do session state se existir
         cotacoes_pivot = st.session_state['cotacoes_pivot']
+
         # Verificar o número de períodos que realmente foram selecionados
         numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
         st.write(f"Número de períodos selecionados para análise: {numero_de_periodos_selecionados}")
+
         # Adiciona um separador e o título "Pares Encontrados"
         st.subheader("Pares Encontrados")
-        
+
         # Encontrar os pares cointegrados e calcular z-scores, half-lives, hurst, beta rotations
         pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
             cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
@@ -466,154 +474,133 @@ if selected == "Análise":
             # Criar uma lista de pares com todas as métricas (Z-Score, P-Value, Hurst, Beta, Half-Life)
             for idx, (pair, zscore, pvalue, hurst, beta, half_life) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations, half_lives)):
                 par_str = f"{pair[0]} - {pair[1]}"
-                metricas_str = f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f} | Half-Life: {half_life:.2f}"
+                metricas_str = (f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f} | "
+                                f"Half-Life: {half_life:.2f}")
                 # Botão para exibir todas as métricas com o par
                 if st.button(f"{par_str} | {metricas_str}", key=f"btn_{idx}"):
                     st.session_state['par_selecionado'] = pair
+
             # Exibe o gráfico apenas se houver um par selecionado
             st.markdown("---")  # Separador
             if 'par_selecionado' in st.session_state:
                 pair_selected = st.session_state['par_selecionado']
                 par_str = f"{pair_selected[0]} - {pair_selected[1]}"
                 metricas_str = f"Z-Score: {zscores[pairs.index(pair_selected)]:.2f} | P-Value: {pvalues[pairs.index(pair_selected)]:.4f} | Hurst: {hursts[pairs.index(pair_selected)]:.4f} | Beta: {beta_rotations[pairs.index(pair_selected)]:.4f} | Half-Life: {half_lives[pairs.index(pair_selected)]:.2f}"
+
                 # Centralizar o título usando HTML
                 st.markdown(f"<h4 style='text-align: center;'>{par_str} | {metricas_str}</h4>", unsafe_allow_html=True)
-                # Configurando as colunas
+
+                # Configurando colunas
                 col1, col2 = st.columns(2)
+
                 with col1:
-                    # Gráfico do Z-Score
+                    # Gráfico do Z-Score com terceira linha de stop
                     S1 = cotacoes_pivot[pair_selected[0]]
                     S2 = cotacoes_pivot[pair_selected[1]]
                     ratios = S1 / S2
                     zscore_series = (ratios - ratios.mean()) / ratios.std()
-                    plt.figure(figsize=(10, 5))  # Tamanho ajustado
+
+                    plt.figure(figsize=(10, 5))
                     plt.plot(zscore_series, label='Z-Score')
                     plt.axhline(0, color='black', linestyle='--')
                     plt.axhline(2, color='red', linestyle='--')
                     plt.axhline(-2, color='green', linestyle='--')
+                    plt.axhline(3, color='orange', linestyle='--', label='+3 Desvio (Stop)')
+                    plt.axhline(-3, color='orange', linestyle='--', label='-3 Desvio (Stop)')
                     plt.legend(loc='best')
                     plt.xlabel('Data')
                     plt.ylabel('Z-Score')
                     plt.xticks(rotation=45, fontsize=6)
-                    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
+                    plt.grid(True)
                     st.pyplot(plt)
-                    # Gráfico de Beta Móvel logo abaixo do Z-Score
-                    st.subheader(f"Beta Móvel para {pair_selected[0]} e {pair_selected[1]}")
-                    plotar_beta_movel(S1, S2, window=40)
+
                 with col2:
-                    # Gráfico de paridades (cotação dos dois ativos)
+                    # Gráfico de Paridade
                     plt.figure(figsize=(10, 5))
                     plt.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
                     plt.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
                     plt.legend(loc='best')
                     plt.xlabel('Data')
+                    plt.ylabel('Cotação Normalizada')
                     plt.xticks(rotation=45, fontsize=6)
-                    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-                    # Ajustar diretamente o índice de datas no eixo X
-                    plt.gca().set_xticks(range(0, len(cotacoes_pivot.index), max(1, len(cotacoes_pivot.index) // 6)))
-                    plt.gca().set_xticklabels([pd.to_datetime(date).strftime('%Y-%m-%d') for date in cotacoes_pivot.index[::max(1, len(cotacoes_pivot.index) // 6)]], rotation=45)
+                    plt.grid(True)
                     st.pyplot(plt)
-                    # Gráfico de Dispersão logo abaixo do gráfico de paridade
+
+                # Gráficos adicionais: Beta Móvel e Dispersão
+                col3, col4 = st.columns(2)
+
+                with col3:
+                    st.subheader(f"Beta Móvel para {pair_selected[0]} e {pair_selected[1]}")
+                    plotar_beta_movel(S1, S2, window=40)
+
+                with col4:
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
 
+                # Expander para configurar compra e venda
+                with st.expander("Configurar Operação", expanded=True):
+                    col1, col2 = st.columns(2)
 
-                # Adicionar o botão "Salvar Par para Operação"
-                if st.button("Salvar Par para Operação"):
-                    conn = get_connection()
-                    cursor = conn.cursor()
+                    with col1:
+                        st.subheader(f"Vender Ação: {pair_selected[0]}")
+                        venda_quantidade = st.number_input("Quantidade para Vender", min_value=100, step=100, value=100, key="venda_quantidade")
+                        venda_preco_atual = S1.iloc[-1]
+                        venda_total = venda_quantidade * venda_preco_atual
+                        st.write(f"Preço Atual: R$ {venda_preco_atual:.2f}")
+                        st.write(f"Total Venda: R$ {venda_total:.2f}")
 
-                    # Criar a tabela no banco de dados, se ainda não existir, com as novas colunas
-                    cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS operacoes (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        par TEXT,
-                        zscore REAL,
-                        pvalue REAL,
-                        hurst REAL,
-                        beta REAL,
-                        half_life REAL,
-                        preco_inicial_acao1 REAL,
-                        preco_inicial_acao2 REAL,
-                        preco_final_acao1 REAL,
-                        preco_final_acao2 REAL,
-                        qtd_acoes1 INTEGER,
-                        qtd_acoes2 INTEGER,
-                        data_inicio TEXT,
-                        data_encerramento TEXT,
-                        resultado REAL,
-                        status TEXT,
-                        data TEXT
-                    )
-                    ''')
+                    with col2:
+                        st.subheader(f"Comprar Ação: {pair_selected[1]}")
+                        compra_quantidade = st.number_input("Quantidade para Comprar", min_value=100, step=100, value=100, key="compra_quantidade")
+                        compra_preco_atual = S2.iloc[-1]
+                        compra_total = compra_quantidade * compra_preco_atual
+                        st.write(f"Preço Atual: R$ {compra_preco_atual:.2f}")
+                        st.write(f"Total Compra: R$ {compra_total:.2f}")
 
-                    # Inserir os dados do par atual na tabela "operacoes" com status "analise" e data atual
-                    data_atual = datetime.now().strftime('%Y-%m-%d')
-                    preco_inicial_acao1 = obter_preco_atual(pair_selected[0])
-                    preco_inicial_acao2 = obter_preco_atual(pair_selected[1])
-                    
-                    # Adicionar inputs para capturar a quantidade de ações
-                    qtd_acoes1 = 0
-                    qtd_acoes2 = 0
+                    # Resultado Total da Operação
+                    resultado_total = venda_total - compra_total
+                    st.markdown(f"<h3 style='text-align: center; color: blue;'>Resultado Total da Operação: R$ {resultado_total:.2f}</h3>", unsafe_allow_html=True)
 
-                    cursor.execute('''
-                    INSERT INTO operacoes (par, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, qtd_acoes1, qtd_acoes2, status, data_inicio, data)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (par_str, zscore, pvalue, hurst, beta, half_life, preco_inicial_acao1, preco_inicial_acao2, qtd_acoes1, qtd_acoes2, 'analise', data_atual, data_atual))
+                # Botão para salvar a operação como Excel
+                st.markdown("---")
+                if st.button("Salvar Operação como Excel"):
 
-                    conn.commit()
-                    conn.close()
 
-                    st.success(f"Par {par_str} salvo com sucesso para operação na data {data_atual}!")
-                    
+                    # Dados da operação
+                    operacao_data = {
+                        "Ativo Vendido": [pair_selected[0]],
+                        "Ativo Comprado": [pair_selected[1]],
+                        "Preço Venda": [venda_preco_atual],
+                        "Preço Compra": [compra_preco_atual],
+                        "Quantidade Vendida": [venda_quantidade],
+                        "Quantidade Comprada": [compra_quantidade],
+                        "Resultado Total": [resultado_total],
+                        "Z-Score": [zscores[pairs.index(pair_selected)]],
+                        "P-Value": [pvalues[pairs.index(pair_selected)]],
+                        "Hurst": [hursts[pairs.index(pair_selected)]],
+                        "Beta": [beta_rotations[pairs.index(pair_selected)]],
+                        "Half-Life": [half_lives[pairs.index(pair_selected)]],
+                        "Data Operação": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                    }
 
-                # Adicionar um separador entre os gráficos e as métricas
-                st.markdown("---") 
+                    df_operacao = pd.DataFrame(operacao_data)
 
-                # Agora adicionamos os 5 cards com as métricas logo abaixo dos gráficos
-                st.subheader("Métricas Explicativas")
-                col1, col2, col3, col4, col5 = st.columns(5)
-                with col1:
-                    criar_card_metrica(
-                        "Z-Score", 
-                        f"{zscores[pairs.index(pair_selected)]:.2f}", 
-                        "O Z-Score mede quantos desvios padrão o ativo está de sua média histórica."
-                    )
-                with col2:
-                    criar_card_metrica(
-                        "P-Value", 
-                        f"{pvalues[pairs.index(pair_selected)]:.4f}", 
-                        "O P-Value indica a probabilidade de a relação entre os ativos ocorrer por acaso."
-                    )
-                with col3:
-                    criar_card_metrica(
-                        "Hurst", 
-                        f"{hursts[pairs.index(pair_selected)]:.4f}", 
-                        "O Exponente de Hurst avalia a tendência de reversão à média."
-                    )
-                with col4:
-                    criar_card_metrica(
-                        "Beta", 
-                        f"{beta_rotations[pairs.index(pair_selected)]:.4f}", 
-                        "O Beta mede a sensibilidade de um ativo em relação a outro."
-                    )
-                with col5:
-                    criar_card_metrica(
-                        "Half-Life", 
-                        f"{half_lives[pairs.index(pair_selected)]:.2f}", 
-                        "O Half-Life é o tempo estimado para que a diferença entre dois ativos cointegrados reverta à média."
+                    # Salvar como arquivo Excel
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df_operacao.to_excel(writer, index=False, sheet_name="Operacao")
+                    output.seek(0)
+
+                    # Disponibilizar para download
+                    st.download_button(
+                        label="Baixar Operação em Excel",
+                        data=output,
+                        file_name=f"operacao_{pair_selected[0]}_{pair_selected[1]}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
 
-            else:
-                st.write("Nenhum par cointegrado encontrado.")
-
-
-
-
-
-
-
-
+        else:
+            st.write("Nenhum par cointegrado encontrado.")
 
 
 
@@ -621,283 +608,236 @@ if selected == "Análise":
 if selected == "Operações":
     st.title("Operações")
 
-    # Opções de status (analise, aberta, fechada)
-    status_opcoes = ["Analise", "Aberta", "Fechada"]
-    status_selecionado = st.radio("Selecione o status da operação:", status_opcoes, key="unique_status_radio_operacoes")
-    status_mapeado = status_selecionado.lower()
+    # Upload do arquivo Excel de operações
+    uploaded_file = st.file_uploader("Carregar Arquivo de Operação (Excel)", type=["xlsx"])
 
-    # Consulta ao banco de dados para buscar pares com o status selecionado
-    conn = get_connection()
-    query = """
-    SELECT par, zscore, pvalue, hurst, beta, half_life, qtd_acoes1, qtd_acoes2, preco_inicial_acao1, preco_inicial_acao2, data_inicio 
-    FROM operacoes
-    WHERE status = ?
-    """
-    operacoes_df = pd.read_sql(query, conn, params=[status_mapeado])
-    conn.close()
+    if uploaded_file is not None:
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        from sklearn.linear_model import LinearRegression
+        import numpy as np
 
-    # Se houver pares disponíveis para o status selecionado
-    if not operacoes_df.empty:
-        # Criar um selectbox para escolher o par
-        pares_disponiveis = operacoes_df['par'].tolist()
-        par_selecionado = st.selectbox(f"Selecione um par com status '{status_selecionado}':", pares_disponiveis, key="unique_par_selectbox")
+        # Função para plotar Beta Móvel
+        def plotar_beta_movel(S1, S2, window=40):
+            try:
+                returns_S1 = np.log(S1 / S1.shift(1)).dropna()
+                returns_S2 = np.log(S2 / S2.shift(1)).dropna()
 
-        # Buscar os detalhes do par selecionado
-        par_detalhes = operacoes_df[operacoes_df['par'] == par_selecionado].iloc[0]
-        ticker1, ticker2 = par_selecionado.split(" - ")
+                betas = []
+                index_values = returns_S1.index[window - 1:]  # Ajustar para a janela
 
-        # Recuperar numero_periodos da análise ou definir um padrão
-        if 'numero_periodos' in st.session_state:
-            numero_periodos = st.session_state['numero_periodos']
-        else:
-            numero_periodos = 120  # Valor padrão se não estiver no session_state
+                for i in range(window, len(returns_S1) + 1):
+                    reg = LinearRegression().fit(
+                        returns_S2[i - window:i].values.reshape(-1, 1),
+                        returns_S1[i - window:i].values
+                    )
+                    betas.append(reg.coef_[0])
 
-        # Baixar dados atuais para os dois tickers, garantindo que tenham o mesmo número de períodos
-        periodo = f"{numero_periodos}d"
-        S1 = yf.download(ticker1, period=periodo)['Close']
-        S2 = yf.download(ticker2, period=periodo)['Close']
+                beta_movel = pd.Series(betas, index=index_values)
 
-        # Verificar se os dados foram baixados corretamente
-        if S1.empty or S2.empty:
-            st.error("Erro ao baixar os dados dos tickers selecionados.")
-            st.stop()
-
-        # Exibir os gráficos e permitir iniciar a operação se for status "Analise"
-        if status_selecionado == "Analise":
-            # Gráfico do Z-Score
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown(f"### Gráfico do Z-Score: {par_selecionado}")
-                ratios = S1 / S2
-                zscore_series = (ratios - ratios.mean()) / ratios.std()
-                plt.figure(figsize=(10, 5))  # Tamanho ajustado
-                plt.plot(zscore_series, label='Z-Score')
-                plt.axhline(0, color='black', linestyle='--')
-                plt.axhline(2, color='red', linestyle='--')
-                plt.axhline(-2, color='green', linestyle='--')
-                plt.legend(loc='best')
-                plt.xlabel('Data')
-                plt.ylabel('Z-Score')
-                plt.xticks(rotation=45, fontsize=6)
-                st.pyplot(plt)
-
-            # Gráfico de Preços Normalizados
-            with col2:
-                st.markdown(f"### Gráfico de Preços Normalizados: {ticker1} e {ticker2}")
-                S1_normalizado = S1 / S1.iloc[0]
-                S2_normalizado = S2 / S2.iloc[0]
+                # Plotar o gráfico de beta móvel
                 plt.figure(figsize=(10, 5))
-                plt.plot(S1_normalizado, label=ticker1)
-                plt.plot(S2_normalizado, label=ticker2)
-                plt.legend(loc='best')
+                plt.plot(beta_movel, label=f'Beta Móvel ({window} períodos)')
+                plt.axhline(0, color='black', linestyle='--')
+                plt.title(f'Beta Móvel ({window} períodos)')
                 plt.xlabel('Data')
-                plt.ylabel('Preço Normalizado')
-                plt.xticks(rotation=45, fontsize=6)
+                plt.ylabel('Beta')
+                plt.legend()
+                plt.grid(True)
                 st.pyplot(plt)
+            except Exception as e:
+                st.error(f"Erro ao calcular ou plotar o beta móvel: {e}")
 
-            # Expander: Calculadora de Operação
-            with st.expander("Calculadora de Operação", expanded=True):
-                col1, col2, col3 = st.columns(3)
+        try:
+            # Ler o arquivo Excel
+            df_operacoes = pd.read_excel(uploaded_file)
+
+            # Verificar se "global_cotacoes" está carregado
+            if "global_cotacoes" not in st.session_state or st.session_state["global_cotacoes"].empty:
+                st.error("Nenhuma cotação carregada no sistema. Por favor, carregue as cotações na aba 'Cotações'.")
+                st.stop()
+
+            cotacoes_df = st.session_state["global_cotacoes"]
+
+            # Preparar a tabela final
+            tabela_final = []
+
+            for index, row in df_operacoes.iterrows():
+                ativo_venda = row["Ativo Vendido"]
+                ativo_compra = row["Ativo Comprado"]
+                data_operacao = row["Data Operação"]
+                quantidade_venda = row["Quantidade Vendida"]
+                quantidade_compra = row["Quantidade Comprada"]
+                valor_inicial_venda = row["Preço Venda"]
+                valor_inicial_compra = row["Preço Compra"]
+                numero_periodos = 120  # Número de períodos padrão
+
+                # Verificar se os ativos estão disponíveis nas cotações
+                if ativo_venda not in cotacoes_df.columns or ativo_compra not in cotacoes_df.columns:
+                    st.error(f"Os ativos {ativo_venda} ou {ativo_compra} não estão disponíveis nas cotações globais.")
+                    continue
+
+                # Obter as séries históricas dos ativos
+                series_venda = cotacoes_df[ativo_venda]
+                series_compra = cotacoes_df[ativo_compra]
+
+                # Limitar os dados ao número de períodos mais recentes
+                series_venda = series_venda.tail(numero_periodos)
+                series_compra = series_compra.tail(numero_periodos)
+
+                # Cálculo do Z-Score
+                ratios = series_venda / series_compra
+                zscore_series = (ratios - ratios.mean()) / ratios.std()
+
+                # Calcular valor total e saldo
+                valor_total_venda = quantidade_venda * series_venda.iloc[-1]
+                valor_total_compra = quantidade_compra * series_compra.iloc[-1]
+                saldo = valor_total_venda - valor_total_compra
+
+                # Adicionar dados à tabela final
+                tabela_final.append({
+                    "Data Operação": data_operacao,
+                    "Ativo": ativo_venda,
+                    "Quantidade": quantidade_venda,
+                    "Tipo": "Venda",
+                    "Valor Inicial": f"R$ {valor_inicial_venda:.2f}",
+                    "Valor Total": f"R$ {valor_total_venda:.2f}",
+                    "Saldo": f"R$ {saldo:.2f}"
+                })
+
+                tabela_final.append({
+                    "Data Operação": data_operacao,
+                    "Ativo": ativo_compra,
+                    "Quantidade": quantidade_compra,
+                    "Tipo": "Compra",
+                    "Valor Inicial": f"R$ {valor_inicial_compra:.2f}",
+                    "Valor Total": f"R$ {valor_total_compra:.2f}",
+                    "Saldo": f"R$ {saldo:.2f}"
+                })
+
+                # Exibir informações e gráficos
+                st.markdown("---")  # Separador
+                st.write(f"**Ativo Vendido:** {ativo_venda}")
+                st.write(f"**Ativo Comprado:** {ativo_compra}")
+                st.write(f"**Data da Operação:** {data_operacao}")
+                st.write(f"**Média das Razões:** {ratios.mean():.4f}")
+                st.write(f"**Desvio Padrão das Razões:** {ratios.std():.4f}")
+
+                # Gerar gráficos
+                col1, col2 = st.columns(2)
 
                 with col1:
-                    st.markdown("### Escolher Lotes")
-                    lotes_vendidos = st.number_input(f"Quantidade de Ações Vendidas ({ticker1}):", min_value=1, step=1, value=100, key="lotes_vendidos")
-                    lotes_comprados = st.number_input(f"Quantidade de Ações Compradas ({ticker2}):", min_value=1, step=1, value=100, key="lotes_comprados")
+                    # Gráfico do Z-Score
+                    plt.figure(figsize=(10, 5))
+                    plt.plot(zscore_series, label="Z-Score")
+                    plt.axhline(0, color='black', linestyle='--')
+                    plt.axhline(2, color='red', linestyle='--', label="+2 Desvio")
+                    plt.axhline(-2, color='green', linestyle='--', label="-2 Desvio")
+                    plt.axhline(3, color='orange', linestyle='--', label="+3 Desvio (Stop)")
+                    plt.axhline(-3, color='orange', linestyle='--', label="-3 Desvio (Stop)")
+                    plt.legend(loc='best')
+                    plt.xlabel("Períodos")
+                    plt.ylabel("Z-Score")
+                    plt.title(f"Z-Score: {ativo_venda} vs {ativo_compra}")
+                    plt.grid(True)
+                    st.pyplot(plt)
 
                 with col2:
-                    # Calcula o valor da venda e compra
-                    preco_venda = obter_preco_atual(ticker1) * lotes_vendidos
-                    preco_compra = obter_preco_atual(ticker2) * lotes_comprados
-                    saldo = preco_venda - preco_compra
-                    st.markdown(f"**Valor Vendido ({ticker1}):** R$ {preco_venda:.2f}")
-                    st.markdown(f"**Valor Comprado ({ticker2}):** R$ {preco_compra:.2f}")
-                    st.markdown(f"**Saldo:** R$ {saldo:.2f}")
+                    # Gráfico de Paridade
+                    plt.figure(figsize=(10, 5))
+                    plt.plot(series_venda / series_venda.iloc[0], label=f"{ativo_venda}")
+                    plt.plot(series_compra / series_compra.iloc[0], label=f"{ativo_compra}")
+                    plt.legend(loc='best')
+                    plt.xlabel("Períodos")
+                    plt.ylabel("Cotação Normalizada")
+                    plt.title(f"Paridade Normalizada: {ativo_venda} vs {ativo_compra}")
+                    plt.grid(True)
+                    st.pyplot(plt)
+
+                col3, col4 = st.columns(2)
 
                 with col3:
-                    # Formulário para iniciar operação na terceira coluna
-                    with st.form("iniciar_operacao"):
-                        st.markdown(f"### Iniciar Operação")
-                        st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_venda / lotes_vendidos:.2f}")
-                        st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_compra / lotes_comprados:.2f}")
+                    # Gráfico de Beta Móvel
+                    plotar_beta_movel(series_venda, series_compra, window=40)
 
-                        iniciar_button = st.form_submit_button("Iniciar Operação")
-                        if iniciar_button:
-                            # Atualizar operação no banco de dados
-                            conn = get_connection()
-                            cursor = conn.cursor()
-                            cursor.execute('''
-                            UPDATE operacoes
-                            SET qtd_acoes1 = ?, qtd_acoes2 = ?, preco_inicial_acao1 = ?, preco_inicial_acao2 = ?, status = ?, data_inicio = ?
-                            WHERE par = ?
-                            ''', (lotes_vendidos, lotes_comprados, preco_venda / lotes_vendidos, preco_compra / lotes_comprados, 'aberta', datetime.now().strftime('%Y-%m-%d'), par_selecionado))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"Operação iniciada com sucesso para o par {par_selecionado}!")
+                with col4:
+                    # Gráfico de Dispersão
+                    plt.figure(figsize=(10, 5))
+                    plt.scatter(series_venda, series_compra, alpha=0.7)
+                    plt.xlabel(f"{ativo_venda}")
+                    plt.ylabel(f"{ativo_compra}")
+                    plt.title(f"Dispersão: {ativo_venda} vs {ativo_compra}")
+                    plt.grid(True)
+                    st.pyplot(plt)
 
-                # Botão para cancelar a análise (fora do formulário)
-                cancelar_button = st.button("Cancelar Análise")
-                if cancelar_button:
-                    conn = get_connection()
-                    cursor = conn.cursor()
-                    # Excluir a operação do banco de dados
-                    cursor.execute("DELETE FROM operacoes WHERE par = ?", (par_selecionado,))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"A operação para o par {par_selecionado} foi cancelada e removida do banco de dados.")
+            # Exibir tabela consolidada
+            st.markdown("---")
+            st.markdown("### Tabela Consolidada de Operações")
+            tabela_df = pd.DataFrame(tabela_final)
+            st.dataframe(tabela_df)
 
-        elif status_selecionado == "Aberta":
-            st.markdown(f"### Operação Aberta: {par_selecionado}")
-            st.markdown(f"**Data de Início:** {par_detalhes['data_inicio']}")
+            # Separador com Posição Atual
+            st.markdown("---")
+            st.markdown("### Posição Atual")
 
-            # Colunas para exibir as informações de cada ação
-            col1, col2 = st.columns(2)
+            # DataFrame consolidado para posição atual
+            posicao_atual = []
 
-            with col1:
-                # Exibir detalhes da ação 1
-                st.markdown(f"### {ticker1}")
-                st.markdown(f"**Quantidade de Ações Vendidas:** {par_detalhes['qtd_acoes1']}")
-                st.markdown(f"**Preço Inicial de {ticker1}:** R$ {par_detalhes['preco_inicial_acao1']:.2f}")
-                valor_inicial_acao1 = par_detalhes['preco_inicial_acao1'] * par_detalhes['qtd_acoes1']
-                st.markdown(f"**Valor Inicial ({ticker1}):** R$ {valor_inicial_acao1:.2f}")
+            for index, row in df_operacoes.iterrows():
+                ativo_venda = row["Ativo Vendido"]
+                ativo_compra = row["Ativo Comprado"]
+                quantidade_venda = row["Quantidade Vendida"]
+                quantidade_compra = row["Quantidade Comprada"]
+                preco_inicial_venda = row["Preço Venda"]
+                preco_inicial_compra = row["Preço Compra"]
 
-                # Obter e exibir o preço atual
-                preco_atual_acao1 = obter_preco_atual(ticker1)
-                st.markdown(f"**Preço Atual de {ticker1}:** R$ {preco_atual_acao1:.2f}")
-                valor_atual_acao1 = preco_atual_acao1 * par_detalhes['qtd_acoes1']
-                st.markdown(f"**Valor Atual ({ticker1}):** R$ {valor_atual_acao1:.2f}")
+                # Obter preços atuais dos ativos
+                preco_atual_venda = cotacoes_df[ativo_venda].iloc[-1] if ativo_venda in cotacoes_df.columns else None
+                preco_atual_compra = cotacoes_df[ativo_compra].iloc[-1] if ativo_compra in cotacoes_df.columns else None
 
-                # Diferença de valor para a ação 1
-                diferenca_acao1 = valor_atual_acao1 - valor_inicial_acao1
-                st.markdown(f"**Diferença de Valor ({ticker1}):** R$ {diferenca_acao1:.2f}")
+                if preco_atual_venda is not None:
+                    lucro_venda = (preco_inicial_venda - preco_atual_venda) * quantidade_venda
+                    posicao_atual.append({
+                        "Ativo": ativo_venda,
+                        "Tipo": "Venda",
+                        "Quantidade": quantidade_venda,
+                        "Preço Inicial": f"R$ {preco_inicial_venda:.2f}",
+                        "Preço Atual": f"R$ {preco_atual_venda:.2f}",
+                        "Lucro/Prejuízo": f"R$ {lucro_venda:.2f}"
+                    })
 
-            with col2:
-                # Exibir detalhes da ação 2
-                st.markdown(f"### {ticker2}")
-                st.markdown(f"**Quantidade de Ações Compradas:** {par_detalhes['qtd_acoes2']}")
-                st.markdown(f"**Preço Inicial de {ticker2}:** R$ {par_detalhes['preco_inicial_acao2']:.2f}")
-                valor_inicial_acao2 = par_detalhes['preco_inicial_acao2'] * par_detalhes['qtd_acoes2']
-                st.markdown(f"**Valor Inicial ({ticker2}):** R$ {valor_inicial_acao2:.2f}")
+                if preco_atual_compra is not None:
+                    lucro_compra = (preco_atual_compra - preco_inicial_compra) * quantidade_compra
+                    posicao_atual.append({
+                        "Ativo": ativo_compra,
+                        "Tipo": "Compra",
+                        "Quantidade": quantidade_compra,
+                        "Preço Inicial": f"R$ {preco_inicial_compra:.2f}",
+                        "Preço Atual": f"R$ {preco_atual_compra:.2f}",
+                        "Lucro/Prejuízo": f"R$ {lucro_compra:.2f}"
+                    })
 
-                # Obter e exibir o preço atual
-                preco_atual_acao2 = obter_preco_atual(ticker2)
-                st.markdown(f"**Preço Atual de {ticker2}:** R$ {preco_atual_acao2:.2f}")
-                valor_atual_acao2 = preco_atual_acao2 * par_detalhes['qtd_acoes2']
-                st.markdown(f"**Valor Atual ({ticker2}):** R$ {valor_atual_acao2:.2f}")
-
-                # Diferença de valor para a ação 2
-                diferenca_acao2 = valor_atual_acao2 - valor_inicial_acao2
-                st.markdown(f"**Diferença de Valor ({ticker2}):** R$ {diferenca_acao2:.2f}")
-
-            # Calcular o resultado total da operação
-            valor_total_inicial = valor_inicial_acao1 + valor_inicial_acao2
-            valor_total_atual = valor_atual_acao1 + valor_atual_acao2
-            resultado_total = valor_total_atual - valor_total_inicial
-
-            # Exibir o resultado total
-            st.markdown(f"### Resultado Total da Operação")
-            st.markdown(f"**Valor Total Inicial:** R$ {valor_total_inicial:.2f}")
-            st.markdown(f"**Valor Total Atual:** R$ {valor_total_atual:.2f}")
-            st.markdown(f"**Resultado da Operação:** R$ {resultado_total:.2f}")
-
-            # Gráfico do Z-Score Atualizado
-            st.markdown(f"### Acompanhamento do Z-Score Atual: {par_selecionado}")
-            
-            # Baixar dados atuais dos dois tickers para acompanhamento
-            S1 = yf.download(ticker1, period='120d')['Close']
-            S2 = yf.download(ticker2, period='120d')['Close']
-            
-            if S1.empty or S2.empty:
-                st.error("Erro ao baixar os dados para acompanhamento do Z-Score.")
+            # Exibir a tabela de posição atual
+            if posicao_atual:
+                posicao_atual_df = pd.DataFrame(posicao_atual)
+                st.dataframe(posicao_atual_df)
             else:
-                # Calcular o Z-Score com dados atualizados
-                ratios = S1 / S2
-                zscore_series = (ratios - ratios.mean()) / ratios.std()
-
-                # Plotar o gráfico do Z-Score
-                plt.figure(figsize=(10, 3))  # Tamanho ajustado para 10x3
-                plt.plot(zscore_series, label='Z-Score Atual')
-                plt.axhline(0, color='black', linestyle='--')
-                plt.axhline(2, color='red', linestyle='--')
-                plt.axhline(-2, color='green', linestyle='--')
-                plt.legend(loc='best')
-                plt.xlabel('Data')
-                plt.ylabel('Z-Score')
-                plt.xticks(rotation=45, fontsize=6)
-                st.pyplot(plt)
-
-                # Gráfico de Preços Normalizados logo abaixo do Z-Score
-                st.markdown(f"### Gráfico de Preços Normalizados: {ticker1} e {ticker2}")
-                S1_normalizado = S1 / S1.iloc[0]
-                S2_normalizado = S2 / S2.iloc[0]
-                plt.figure(figsize=(10, 3))  # Tamanho ajustado para 10x3
-                plt.plot(S1_normalizado, label=ticker1)
-                plt.plot(S2_normalizado, label=ticker2)
-                plt.legend(loc='best')
-                plt.xlabel('Data')
-                plt.ylabel('Preço Normalizado')
-                plt.xticks(rotation=45, fontsize=6)
-                st.pyplot(plt)
-
-                
-
+                st.warning("Nenhum dado disponível para a posição atual.")
              
+            # Calcular o saldo final
+            saldo_final = sum([
+                (float(row["Lucro/Prejuízo"].replace('R$', '').replace(',', '').strip()))
+                for row in posicao_atual
+            ])
 
-        # Adicionando a divisão em colunas
-        st.markdown(f"### Gráficos Candlestick dos Últimos 10 Períodos")
+            # Exibir o saldo final
+            st.markdown("### Saldo Final Consolidado")
+            st.markdown(f"<h3 style='text-align: center; color: blue;'>R$ {saldo_final:.2f}</h3>", unsafe_allow_html=True)
+     
 
-        col1, col2 = st.columns(2)
+        except Exception as e:
+            st.error(f"Erro ao processar o arquivo: {e}")
 
-        # Adicionando o botão para gerar os gráficos de candlestick
-        gerar_graficos = st.button("Gerar Gráfico de Candlestick")
 
-        # Só gera os gráficos se o botão for clicado
-        if gerar_graficos:
-            
-            # Função para verificar se os dados possuem as colunas necessárias para candlestick
-            def verificar_dados_candlestick(df):
-                return all(col in df.columns for col in ['Open', 'High', 'Low', 'Close', 'Volume'])
 
-            # Gráfico de Candlestick para o ticker1
-            with col1:
-                st.markdown(f"#### Candlestick: {ticker1}")
-                # Baixando dados com colunas necessárias para o candlestick
-                S1_candles = yf.download(ticker1, period='10d', interval='1d')
-                
-                # Garantir que os dados possuem colunas de Candlestick
-                if verificar_dados_candlestick(S1_candles):
-                    fig, (ax, ax_volume) = plt.subplots(2, sharex=True, gridspec_kw={'height_ratios': [3, 1]}, figsize=(10, 6))  # Criar dois eixos
-                    mpf.plot(S1_candles, type='candle', style='charles', ax=ax, volume=ax_volume)  # Passar ambos os eixos
-                    st.pyplot(fig)  # Exibir o gráfico no Streamlit
-                else:
-                    st.error(f"Erro ao baixar dados de candlestick para {ticker1}. Verifique se o ativo possui dados suficientes.")
 
-            # Gráfico de Candlestick para o ticker2
-            with col2:
-                st.markdown(f"#### Candlestick: {ticker2}")
-                # Baixando dados com colunas necessárias para o candlestick
-                S2_candles = yf.download(ticker2, period='10d', interval='1d')
-
-                # Garantir que os dados possuem colunas de Candlestick
-                if verificar_dados_candlestick(S2_candles):
-                    fig, (ax, ax_volume) = plt.subplots(2, sharex=True, gridspec_kw={'height_ratios': [3, 1]}, figsize=(10, 6))  # Criar dois eixos
-                    mpf.plot(S2_candles, type='candle', style='charles', ax=ax, volume=ax_volume)  # Passar ambos os eixos
-                    st.pyplot(fig)  # Exibir o gráfico no Streamlit
-                else:
-                    st.error(f"Erro ao baixar dados de candlestick para {ticker2}. Verifique se o ativo possui dados suficientes.")
-
-                        # Botão para encerrar a operação
-            encerrar_button = st.button("Encerrar Operação")
-            if encerrar_button:
-                conn = get_connection()
-                cursor = conn.cursor()
-                # Atualizar o status da operação para 'fechada' e registrar a data de encerramento
-                data_encerramento = datetime.now().strftime('%Y-%m-%d')
-                cursor.execute('''
-                UPDATE operacoes
-                SET status = ?, data_encerramento = ?
-                WHERE par = ?
-                ''', ('fechada', data_encerramento, par_selecionado))
-                conn.commit()
-                conn.close()
-                st.success(f"A operação para o par {par_selecionado} foi encerrada com sucesso!")
