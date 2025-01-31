@@ -341,6 +341,10 @@ if selected == "Página Inicial":
     else:
         st.warning("Nenhuma cotação carregada. Por favor, carregue as cotações na aba 'Cotações'.")
 
+
+
+
+
 # Aba de Cotações
 if selected == "Cotações":
     st.title("Cotações de Ações")
@@ -421,6 +425,187 @@ if selected == "Cotações":
         st.warning("Nenhuma cotação foi carregada ainda.")
 
 
+# if selected == "Análise":
+#     st.title("Análise de Cointegração de Ações")
+
+#     # Seleção de parâmetros para análise
+#     with st.form(key='analysis_form'):
+#         numero_periodos = st.number_input(
+#             "Número de Períodos para Análise",
+#             min_value=1,
+#             value=120,
+#             help="Número de períodos (mais recentes) para considerar na análise de cointegração."
+#         )
+#         zscore_threshold_upper = st.number_input("Limite Superior do Z-Score", value=2.0)
+#         zscore_threshold_lower = st.number_input("Limite Inferior do Z-Score", value=-2.0)
+#         submit_button = st.form_submit_button(label="Analisar Pares Cointegrados")
+
+#     if submit_button or 'cotacoes_pivot' in st.session_state:
+#         if submit_button:
+#             # Verificar se o DataFrame global existe no session_state
+#             if "global_cotacoes" not in st.session_state or st.session_state["global_cotacoes"].empty:
+#                 st.error("Nenhuma cotação carregada. Por favor, carregue as cotações antes de realizar a análise.")
+#                 st.stop()
+
+#             # Obter o DataFrame global das cotações
+#             cotacoes_df = st.session_state["global_cotacoes"]
+
+#             # Verificar se a coluna 'Date' está presente e transformá-la no índice
+#             if "Date" in cotacoes_df.columns:
+#                 cotacoes_df.set_index("Date", inplace=True)
+
+#             # Transformar os dados no formato adequado para a cointegração
+#             cotacoes_pivot = cotacoes_df.tail(numero_periodos)
+
+#             # Armazenar no session state
+#             st.session_state['cotacoes_pivot'] = cotacoes_pivot
+
+#         # Pegar do session state se existir
+#         cotacoes_pivot = st.session_state['cotacoes_pivot']
+
+#         # Verificar o número de períodos que realmente foram selecionados
+#         numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
+#         st.write(f"Número de períodos selecionados para análise: {numero_de_periodos_selecionados}")
+
+#         # Adiciona um separador e o título "Pares Encontrados"
+#         st.subheader("Pares Encontrados")
+
+#         # Encontrar os pares cointegrados e calcular z-scores, half-lives, hurst, beta rotations
+#         pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
+#             cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
+#         )
+#         if pairs:
+#             # Criar uma lista de pares com todas as métricas (Z-Score, P-Value, Hurst, Beta, Half-Life)
+#             for idx, (pair, zscore, pvalue, hurst, beta, half_life) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations, half_lives)):
+#                 par_str = f"{pair[0]} - {pair[1]}"
+#                 metricas_str = (f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f} | "
+#                                 f"Half-Life: {half_life:.2f}")
+#                 # Botão para exibir todas as métricas com o par
+#                 if st.button(f"{par_str} | {metricas_str}", key=f"btn_{idx}"):
+#                     st.session_state['par_selecionado'] = pair
+
+#             # Exibe o gráfico apenas se houver um par selecionado
+#             st.markdown("---")  # Separador
+#             if 'par_selecionado' in st.session_state:
+#                 pair_selected = st.session_state['par_selecionado']
+#                 par_str = f"{pair_selected[0]} - {pair_selected[1]}"
+#                 metricas_str = f"Z-Score: {zscores[pairs.index(pair_selected)]:.2f} | P-Value: {pvalues[pairs.index(pair_selected)]:.4f} | Hurst: {hursts[pairs.index(pair_selected)]:.4f} | Beta: {beta_rotations[pairs.index(pair_selected)]:.4f} | Half-Life: {half_lives[pairs.index(pair_selected)]:.2f}"
+
+#                 # Centralizar o título usando HTML
+#                 st.markdown(f"<h4 style='text-align: center;'>{par_str} | {metricas_str}</h4>", unsafe_allow_html=True)
+
+#                 # Configurando colunas
+#                 col1, col2 = st.columns(2)
+
+#                 with col1:
+#                     # Gráfico do Z-Score com terceira linha de stop
+#                     S1 = cotacoes_pivot[pair_selected[0]]
+#                     S2 = cotacoes_pivot[pair_selected[1]]
+#                     ratios = S1 / S2
+#                     zscore_series = (ratios - ratios.mean()) / ratios.std()
+
+#                     plt.figure(figsize=(10, 5))
+#                     plt.plot(zscore_series, label='Z-Score')
+#                     plt.axhline(0, color='black', linestyle='--')
+#                     plt.axhline(2, color='red', linestyle='--')
+#                     plt.axhline(-2, color='green', linestyle='--')
+#                     plt.axhline(3, color='orange', linestyle='--', label='+3 Desvio (Stop)')
+#                     plt.axhline(-3, color='orange', linestyle='--', label='-3 Desvio (Stop)')
+#                     plt.legend(loc='best')
+#                     plt.xlabel('Data')
+#                     plt.ylabel('Z-Score')
+#                     plt.xticks(rotation=45, fontsize=6)
+#                     plt.grid(True)
+#                     st.pyplot(plt)
+
+#                 with col2:
+#                     # Gráfico de Paridade
+#                     plt.figure(figsize=(10, 5))
+#                     plt.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
+#                     plt.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
+#                     plt.legend(loc='best')
+#                     plt.xlabel('Data')
+#                     plt.ylabel('Cotação Normalizada')
+#                     plt.xticks(rotation=45, fontsize=6)
+#                     plt.grid(True)
+#                     st.pyplot(plt)
+
+#                 # Gráficos adicionais: Beta Móvel e Dispersão
+#                 col3, col4 = st.columns(2)
+
+#                 with col3:
+#                     st.subheader(f"Beta Móvel para {pair_selected[0]} e {pair_selected[1]}")
+#                     plotar_beta_movel(S1, S2, window=40)
+
+#                 with col4:
+#                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
+#                     plotar_grafico_dispersao(S1, S2)
+
+#                 # Expander para configurar compra e venda
+#                 with st.expander("Configurar Operação", expanded=True):
+#                     col1, col2 = st.columns(2)
+
+#                     with col1:
+#                         st.subheader(f"Vender Ação: {pair_selected[0]}")
+#                         venda_quantidade = st.number_input("Quantidade para Vender", min_value=100, step=100, value=100, key="venda_quantidade")
+#                         venda_preco_atual = S1.iloc[-1]
+#                         venda_total = venda_quantidade * venda_preco_atual
+#                         st.write(f"Preço Atual: R$ {venda_preco_atual:.2f}")
+#                         st.write(f"Total Venda: R$ {venda_total:.2f}")
+
+#                     with col2:
+#                         st.subheader(f"Comprar Ação: {pair_selected[1]}")
+#                         compra_quantidade = st.number_input("Quantidade para Comprar", min_value=100, step=100, value=100, key="compra_quantidade")
+#                         compra_preco_atual = S2.iloc[-1]
+#                         compra_total = compra_quantidade * compra_preco_atual
+#                         st.write(f"Preço Atual: R$ {compra_preco_atual:.2f}")
+#                         st.write(f"Total Compra: R$ {compra_total:.2f}")
+
+#                     # Resultado Total da Operação
+#                     resultado_total = venda_total - compra_total
+#                     st.markdown(f"<h3 style='text-align: center; color: blue;'>Resultado Total da Operação: R$ {resultado_total:.2f}</h3>", unsafe_allow_html=True)
+
+#                 # Botão para salvar a operação como Excel
+#                 st.markdown("---")
+#                 if st.button("Salvar Operação como Excel"):
+
+
+#                     # Dados da operação
+#                     operacao_data = {
+#                         "Ativo Vendido": [pair_selected[0]],
+#                         "Ativo Comprado": [pair_selected[1]],
+#                         "Preço Venda": [venda_preco_atual],
+#                         "Preço Compra": [compra_preco_atual],
+#                         "Quantidade Vendida": [venda_quantidade],
+#                         "Quantidade Comprada": [compra_quantidade],
+#                         "Resultado Total": [resultado_total],
+#                         "Z-Score": [zscores[pairs.index(pair_selected)]],
+#                         "P-Value": [pvalues[pairs.index(pair_selected)]],
+#                         "Hurst": [hursts[pairs.index(pair_selected)]],
+#                         "Beta": [beta_rotations[pairs.index(pair_selected)]],
+#                         "Half-Life": [half_lives[pairs.index(pair_selected)]],
+#                         "Data Operação": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+#                     }
+
+#                     df_operacao = pd.DataFrame(operacao_data)
+
+#                     # Salvar como arquivo Excel
+#                     output = BytesIO()
+#                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+#                         df_operacao.to_excel(writer, index=False, sheet_name="Operacao")
+#                     output.seek(0)
+
+#                     # Disponibilizar para download
+#                     st.download_button(
+#                         label="Baixar Operação em Excel",
+#                         data=output,
+#                         file_name=f"operacao_{pair_selected[0]}_{pair_selected[1]}.xlsx",
+#                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+#                     )
+
+#         else:
+#             st.write("Nenhum par cointegrado encontrado.")
+
 if selected == "Análise":
     st.title("Análise de Cointegração de Ações")
 
@@ -438,68 +623,49 @@ if selected == "Análise":
 
     if submit_button or 'cotacoes_pivot' in st.session_state:
         if submit_button:
-            # Verificar se o DataFrame global existe no session_state
             if "global_cotacoes" not in st.session_state or st.session_state["global_cotacoes"].empty:
                 st.error("Nenhuma cotação carregada. Por favor, carregue as cotações antes de realizar a análise.")
                 st.stop()
 
-            # Obter o DataFrame global das cotações
             cotacoes_df = st.session_state["global_cotacoes"]
-
-            # Verificar se a coluna 'Date' está presente e transformá-la no índice
             if "Date" in cotacoes_df.columns:
                 cotacoes_df.set_index("Date", inplace=True)
 
-            # Transformar os dados no formato adequado para a cointegração
             cotacoes_pivot = cotacoes_df.tail(numero_periodos)
-
-            # Armazenar no session state
             st.session_state['cotacoes_pivot'] = cotacoes_pivot
 
-        # Pegar do session state se existir
         cotacoes_pivot = st.session_state['cotacoes_pivot']
+        st.write(f"Número de períodos selecionados para análise: {cotacoes_pivot.shape[0]}")
 
-        # Verificar o número de períodos que realmente foram selecionados
-        numero_de_periodos_selecionados = cotacoes_pivot.shape[0]
-        st.write(f"Número de períodos selecionados para análise: {numero_de_periodos_selecionados}")
-
-        # Adiciona um separador e o título "Pares Encontrados"
         st.subheader("Pares Encontrados")
 
-        # Encontrar os pares cointegrados e calcular z-scores, half-lives, hurst, beta rotations
+        # Encontrar pares cointegrados e calcular métricas
         pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
             cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
         )
+
         if pairs:
-            # Criar uma lista de pares com todas as métricas (Z-Score, P-Value, Hurst, Beta, Half-Life)
             for idx, (pair, zscore, pvalue, hurst, beta, half_life) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations, half_lives)):
                 par_str = f"{pair[0]} - {pair[1]}"
-                metricas_str = (f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f} | "
-                                f"Half-Life: {half_life:.2f}")
-                # Botão para exibir todas as métricas com o par
+                metricas_str = f"Z-Score: {zscore:.2f} | P-Value: {pvalue:.4f} | Hurst: {hurst:.4f} | Beta: {beta:.4f} | Half-Life: {half_life:.2f}"
+                
                 if st.button(f"{par_str} | {metricas_str}", key=f"btn_{idx}"):
                     st.session_state['par_selecionado'] = pair
 
-            # Exibe o gráfico apenas se houver um par selecionado
-            st.markdown("---")  # Separador
             if 'par_selecionado' in st.session_state:
                 pair_selected = st.session_state['par_selecionado']
-                par_str = f"{pair_selected[0]} - {pair_selected[1]}"
-                metricas_str = f"Z-Score: {zscores[pairs.index(pair_selected)]:.2f} | P-Value: {pvalues[pairs.index(pair_selected)]:.4f} | Hurst: {hursts[pairs.index(pair_selected)]:.4f} | Beta: {beta_rotations[pairs.index(pair_selected)]:.4f} | Half-Life: {half_lives[pairs.index(pair_selected)]:.2f}"
+                S1 = cotacoes_pivot[pair_selected[0]]
+                S2 = cotacoes_pivot[pair_selected[1]]
+                ratios = S1 / S2
+                zscore_series = (ratios - ratios.mean()) / ratios.std()
 
-                # Centralizar o título usando HTML
-                st.markdown(f"<h4 style='text-align: center;'>{par_str} | {metricas_str}</h4>", unsafe_allow_html=True)
+                st.markdown("---")
+                st.markdown(f"<h4 style='text-align: center;'>{pair_selected[0]} - {pair_selected[1]}</h4>", unsafe_allow_html=True)
 
-                # Configurando colunas
                 col1, col2 = st.columns(2)
 
                 with col1:
-                    # Gráfico do Z-Score com terceira linha de stop
-                    S1 = cotacoes_pivot[pair_selected[0]]
-                    S2 = cotacoes_pivot[pair_selected[1]]
-                    ratios = S1 / S2
-                    zscore_series = (ratios - ratios.mean()) / ratios.std()
-
+                    st.subheader("Z-Score do Par")
                     plt.figure(figsize=(10, 5))
                     plt.plot(zscore_series, label='Z-Score')
                     plt.axhline(0, color='black', linestyle='--')
@@ -515,7 +681,7 @@ if selected == "Análise":
                     st.pyplot(plt)
 
                 with col2:
-                    # Gráfico de Paridade
+                    st.subheader("Cotação Normalizada")
                     plt.figure(figsize=(10, 5))
                     plt.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
                     plt.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
@@ -526,7 +692,6 @@ if selected == "Análise":
                     plt.grid(True)
                     st.pyplot(plt)
 
-                # Gráficos adicionais: Beta Móvel e Dispersão
                 col3, col4 = st.columns(2)
 
                 with col3:
@@ -537,7 +702,6 @@ if selected == "Análise":
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
 
-                # Expander para configurar compra e venda
                 with st.expander("Configurar Operação", expanded=True):
                     col1, col2 = st.columns(2)
 
@@ -557,16 +721,11 @@ if selected == "Análise":
                         st.write(f"Preço Atual: R$ {compra_preco_atual:.2f}")
                         st.write(f"Total Compra: R$ {compra_total:.2f}")
 
-                    # Resultado Total da Operação
                     resultado_total = venda_total - compra_total
                     st.markdown(f"<h3 style='text-align: center; color: blue;'>Resultado Total da Operação: R$ {resultado_total:.2f}</h3>", unsafe_allow_html=True)
 
-                # Botão para salvar a operação como Excel
                 st.markdown("---")
                 if st.button("Salvar Operação como Excel"):
-
-
-                    # Dados da operação
                     operacao_data = {
                         "Ativo Vendido": [pair_selected[0]],
                         "Ativo Comprado": [pair_selected[1]],
@@ -575,32 +734,42 @@ if selected == "Análise":
                         "Quantidade Vendida": [venda_quantidade],
                         "Quantidade Comprada": [compra_quantidade],
                         "Resultado Total": [resultado_total],
-                        "Z-Score": [zscores[pairs.index(pair_selected)]],
-                        "P-Value": [pvalues[pairs.index(pair_selected)]],
-                        "Hurst": [hursts[pairs.index(pair_selected)]],
-                        "Beta": [beta_rotations[pairs.index(pair_selected)]],
-                        "Half-Life": [half_lives[pairs.index(pair_selected)]],
                         "Data Operação": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
                     }
 
                     df_operacao = pd.DataFrame(operacao_data)
-
-                    # Salvar como arquivo Excel
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                         df_operacao.to_excel(writer, index=False, sheet_name="Operacao")
                     output.seek(0)
 
-                    # Disponibilizar para download
-                    st.download_button(
-                        label="Baixar Operação em Excel",
-                        data=output,
-                        file_name=f"operacao_{pair_selected[0]}_{pair_selected[1]}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    st.download_button("Baixar Operação em Excel", data=output, file_name=f"operacao_{pair_selected[0]}_{pair_selected[1]}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-        else:
-            st.write("Nenhum par cointegrado encontrado.")
+                # Exibir métricas no rodapé
+                st.markdown("---")
+                st.markdown("### 📊 Métricas do Par Selecionado e Recomendações")
+
+                col1, col2, col3, col4, col5 = st.columns(5)
+
+                # Z-Score
+                col1.metric("Z-Score", f"{zscores[pairs.index(pair_selected)]:.2f}")
+                col1.caption("📌 Mede o desvio da média. Valores acima de ±2 indicam oportunidade de reversão.")
+
+                # P-Value
+                col2.metric("P-Value", f"{pvalues[pairs.index(pair_selected)]:.4f}")
+                col2.caption("📌 Probabilidade de cointegração ser aleatória. Valores abaixo de 0.05 são desejáveis.")
+
+                # Hurst Exponent
+                col3.metric("Hurst", f"{hursts[pairs.index(pair_selected)]:.4f}")
+                col3.caption("📌 Mede a tendência de reversão ou persistência. Valores próximos de 0.5 são ideais.")
+
+                # Beta Rotation
+                col4.metric("Beta", f"{beta_rotations[pairs.index(pair_selected)]:.4f}")
+                col4.caption("📌 Sensibilidade do ativo em relação ao outro. Quanto menor, melhor para pares estáveis.")
+
+                # Half-Life
+                col5.metric("Half-Life", f"{half_lives[pairs.index(pair_selected)]:.2f}")
+                col5.caption("📌 Tempo esperado para metade da reversão ao valor médio. Quanto menor, melhor.")
 
 
 
