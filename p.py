@@ -296,8 +296,8 @@ with st.sidebar:
     st.image(logo_image, use_column_width=True)  # Exibir a imagem no menu lateral
     selected = option_menu(
         menu_title="Menu Principal",  # required
-        options=["Página Inicial", "Cotações", "Análise", "Operações"],  # required
-        icons=["house", "currency-exchange", "graph-up-arrow", "briefcase"],  # ícones para cada página
+        options=["Página Inicial", "Cotações", "Análise", "Operações", "Backtesting"],  # required
+        icons=["house", "currency-exchange", "graph-up-arrow", "briefcase", "clock-history"],  # ícones para cada página
         menu_icon="cast",  # ícone do menu
         default_index=0,  # seleciona a aba 'Página Inicial'
     )
@@ -520,21 +520,43 @@ if selected == "Análise":
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
 
+                # Expander com a configuração da operação, agora com as colunas ajustadas de acordo com o Z-Score
                 with st.expander("Configurar Operação", expanded=True):
+                    # Obtém o Z-Score do par selecionado
+                    current_zscore = zscores[pairs.index(pair_selected)]
+                    
+                    # Define, de acordo com o Z-Score, qual ativo vender e qual comprar
+                    if current_zscore > 0:
+                        st.markdown(
+                            f"**Legenda de Operação:** Com o Z-Score positivo ({current_zscore:.2f}), recomenda-se **VENDER {pair_selected[0]}** (ativo sobrevalorizado) e **COMPRAR {pair_selected[1]}** (ativo subvalorizado)."
+                        )
+                        stock_to_sell = pair_selected[0]
+                        stock_to_buy = pair_selected[1]
+                        sell_price = S1.iloc[-1]
+                        buy_price = S2.iloc[-1]
+                    else:
+                        st.markdown(
+                            f"**Legenda de Operação:** Com o Z-Score negativo ({current_zscore:.2f}), recomenda-se **VENDER {pair_selected[1]}** (ativo sobrevalorizado) e **COMPRAR {pair_selected[0]}** (ativo subvalorizado)."
+                        )
+                        stock_to_sell = pair_selected[1]
+                        stock_to_buy = pair_selected[0]
+                        sell_price = S2.iloc[-1]
+                        buy_price = S1.iloc[-1]
+
                     col1, col2 = st.columns(2)
 
                     with col1:
-                        st.subheader(f"Vender Ação: {pair_selected[0]}")
+                        st.subheader(f"Vender Ação: {stock_to_sell}")
                         venda_quantidade = st.number_input("Quantidade para Vender", min_value=100, step=100, value=100, key="venda_quantidade")
-                        venda_preco_atual = S1.iloc[-1]
+                        venda_preco_atual = sell_price
                         venda_total = venda_quantidade * venda_preco_atual
                         st.write(f"Preço Atual: R$ {venda_preco_atual:.2f}")
                         st.write(f"Total Venda: R$ {venda_total:.2f}")
 
                     with col2:
-                        st.subheader(f"Comprar Ação: {pair_selected[1]}")
+                        st.subheader(f"Comprar Ação: {stock_to_buy}")
                         compra_quantidade = st.number_input("Quantidade para Comprar", min_value=100, step=100, value=100, key="compra_quantidade")
-                        compra_preco_atual = S2.iloc[-1]
+                        compra_preco_atual = buy_price
                         compra_total = compra_quantidade * compra_preco_atual
                         st.write(f"Preço Atual: R$ {compra_preco_atual:.2f}")
                         st.write(f"Total Compra: R$ {compra_total:.2f}")
@@ -553,10 +575,10 @@ if selected == "Análise":
                 st.markdown("---")
                 if st.button("Salvar Operação como Excel"):
                     operacao_data = {
-                        "Ativo Vendido": [pair_selected[0]],
-                        "Ativo Comprado": [pair_selected[1]],
-                        "Preço Venda": [venda_preco_atual],
-                        "Preço Compra": [compra_preco_atual],
+                        "Ativo Vendido": [stock_to_sell],
+                        "Ativo Comprado": [stock_to_buy],
+                        "Preço Venda": [sell_price],
+                        "Preço Compra": [buy_price],
                         "Quantidade Vendida": [venda_quantidade],
                         "Quantidade Comprada": [compra_quantidade],
                         "Resultado Total": [resultado_total],
@@ -832,7 +854,6 @@ if selected == "Operações":
 
         except Exception as e:
             st.error(f"Erro ao processar o arquivo: {e}")
-
 
 
 
