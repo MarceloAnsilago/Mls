@@ -669,17 +669,37 @@ if selected == "Operações":
             # Ler o arquivo Excel
             df_operacoes = pd.read_excel(uploaded_file)
 
+            # 1) Converter a coluna de datas para datetime
+            df_operacoes["Data Operação"] = pd.to_datetime(df_operacoes["Data Operação"], errors="coerce")
+
+            # Avisar caso tenha datas inválidas
+            if df_operacoes["Data Operação"].isnull().any():
+                st.warning("Há datas inválidas em 'Data Operação'. Verifique o arquivo Excel.")
+
             # Verificar se "global_cotacoes" está carregado
             if "global_cotacoes" not in st.session_state or st.session_state["global_cotacoes"].empty:
                 st.error("Nenhuma cotação carregada no sistema. Por favor, carregue as cotações na aba 'Cotações'.")
                 st.stop()
 
+            # 2) Converter o índice do DataFrame de cotações para DateTimeIndex
             cotacoes_df = st.session_state["global_cotacoes"]
+            if not pd.api.types.is_datetime64_any_dtype(cotacoes_df.index):
+                # Tenta converter o índice atual para datetime
+                cotacoes_df.index = pd.to_datetime(cotacoes_df.index, errors='coerce')
+                # Remover possíveis linhas com índice inválido (NaT)
+                cotacoes_df = cotacoes_df[~cotacoes_df.index.isnull()]
+                # Sobrescreve no session_state, se desejar reutilizar o DF corrigido
+                st.session_state["global_cotacoes"] = cotacoes_df
 
             # Preparar a tabela final
             tabela_final = []
 
             for index, row in df_operacoes.iterrows():
+                # Verifica se a data é válida (não é NaT)
+                if pd.isnull(row["Data Operação"]):
+                    st.error(f"Linha {index}: Data da Operação inválida. Operação ignorada.")
+                    continue
+
                 ativo_venda = row["Ativo Vendido"]
                 ativo_compra = row["Ativo Comprado"]
                 data_operacao = row["Data Operação"]
@@ -694,15 +714,11 @@ if selected == "Operações":
                     st.error(f"Os ativos {ativo_venda} ou {ativo_compra} não estão disponíveis nas cotações globais.")
                     continue
 
-                # Obter as séries históricas dos ativos
-                series_venda = cotacoes_df[ativo_venda]
-                series_compra = cotacoes_df[ativo_compra]
+                # Obter as séries históricas dos ativos, limitadas a 120 períodos
+                series_venda = cotacoes_df[ativo_venda].tail(numero_periodos)
+                series_compra = cotacoes_df[ativo_compra].tail(numero_periodos)
 
-                # Limitar os dados ao número de períodos mais recentes
-                series_venda = series_venda.tail(numero_periodos)
-                series_compra = series_compra.tail(numero_periodos)
-
-                # Cálculo do Z-Score
+                # Calcular o Z-Score
                 ratios = series_venda / series_compra
                 zscore_series = (ratios - ratios.mean()) / ratios.std()
 
@@ -740,45 +756,39 @@ if selected == "Operações":
                 st.write(f"**Média das Razões:** {ratios.mean():.4f}")
                 st.write(f"**Desvio Padrão das Razões:** {ratios.std():.4f}")
 
-                # Gerar gráficos
-                col1, col2 = st.columns(2)
+                # ======= Gráfico do Z-Score =======
+                plt.figure(figsize=(12, 3))
+                plt.plot(zscore_series, label="Z-Score")
+                plt.axhline(0, color='black', linestyle='--')
+                plt.axhline(2, color='red', linestyle='--', label="+2 Desvio")
+                plt.axhline(-2, color='green', linestyle='--', label="-2 Desvio")
+                plt.axhline(3, color='orange', linestyle='--', label="+3 Desvio (Stop)")
+                plt.axhline(-3, color='orange', linestyle='--', label="-3 Desvio (Stop)")
+                plt.legend(loc='best')
+                plt.xlabel("Períodos")
+                plt.ylabel("Z-Score")
+                plt.title(f"Z-Score: {ativo_venda} vs {ativo_compra}")
+                plt.grid(True)
+                st.pyplot(plt)
 
-                with col1:
-                    # Gráfico do Z-Score
-                    plt.figure(figsize=(10, 5))
-                    plt.plot(zscore_series, label="Z-Score")
-                    plt.axhline(0, color='black', linestyle='--')
-                    plt.axhline(2, color='red', linestyle='--', label="+2 Desvio")
-                    plt.axhline(-2, color='green', linestyle='--', label="-2 Desvio")
-                    plt.axhline(3, color='orange', linestyle='--', label="+3 Desvio (Stop)")
-                    plt.axhline(-3, color='orange', linestyle='--', label="-3 Desvio (Stop)")
-                    plt.legend(loc='best')
-                    plt.xlabel("Períodos")
-                    plt.ylabel("Z-Score")
-                    plt.title(f"Z-Score: {ativo_venda} vs {ativo_compra}")
-                    plt.grid(True)
-                    st.pyplot(plt)
+                # ======= Gráfico de Paridade Normalizada =======
+                plt.figure(figsize=(12, 3))
+                plt.plot(series_venda / series_venda.iloc[0], label=f"{ativo_venda}")
+                plt.plot(series_compra / series_compra.iloc[0], label=f"{ativo_compra}")
+                plt.legend(loc='best')
+                plt.xlabel("Períodos")
+                plt.ylabel("Cotação Normalizada")
+                plt.title(f"Paridade Normalizada: {ativo_venda} vs {ativo_compra}")
+                plt.grid(True)
+                st.pyplot(plt)
 
-                with col2:
-                    # Gráfico de Paridade
-                    plt.figure(figsize=(10, 5))
-                    plt.plot(series_venda / series_venda.iloc[0], label=f"{ativo_venda}")
-                    plt.plot(series_compra / series_compra.iloc[0], label=f"{ativo_compra}")
-                    plt.legend(loc='best')
-                    plt.xlabel("Períodos")
-                    plt.ylabel("Cotação Normalizada")
-                    plt.title(f"Paridade Normalizada: {ativo_venda} vs {ativo_compra}")
-                    plt.grid(True)
-                    st.pyplot(plt)
-
+                # ======= Gráficos de Beta Móvel e Dispersão =======
                 col3, col4 = st.columns(2)
 
                 with col3:
-                    # Gráfico de Beta Móvel
                     plotar_beta_movel(series_venda, series_compra, window=40)
 
                 with col4:
-                    # Gráfico de Dispersão
                     plt.figure(figsize=(10, 5))
                     plt.scatter(series_venda, series_compra, alpha=0.7)
                     plt.xlabel(f"{ativo_venda}")
@@ -786,6 +796,63 @@ if selected == "Operações":
                     plt.title(f"Dispersão: {ativo_venda} vs {ativo_compra}")
                     plt.grid(True)
                     st.pyplot(plt)
+
+                # ======= Novos Gráficos de Desempenho (em duas colunas) =======
+                # Converter 5 dias antes da data_operacao
+                # ======= Novos Gráficos de Desempenho (em duas colunas) =======
+                # ======= Novos Gráficos de Desempenho (em duas colunas) =======
+                data_inicial = data_operacao - pd.Timedelta(days=5)
+
+                # Pegar série completa sem limitar a 120 períodos
+                serie_completa_vendida = cotacoes_df[ativo_venda]
+                serie_completa_comprada = cotacoes_df[ativo_compra]
+
+                # Filtrar a partir de data_inicial até a última cotação
+                desempenho_vendido = serie_completa_vendida.loc[data_inicial:]
+                desempenho_comprado = serie_completa_comprada.loc[data_inicial:]
+
+                col5, col6 = st.columns(2)
+
+                # ======= Novos Gráficos de Desempenho (em duas colunas) =======
+                data_inicial = data_operacao - pd.Timedelta(days=5)
+
+                # Pegar série completa sem limitar a 120 períodos
+                serie_completa_vendida = cotacoes_df[ativo_venda]
+                serie_completa_comprada = cotacoes_df[ativo_compra]
+
+                # Filtrar a partir de data_inicial até a última cotação
+                desempenho_vendido = serie_completa_vendida.loc[data_inicial:]
+                desempenho_comprado = serie_completa_comprada.loc[data_inicial:]
+
+                col5, col6 = st.columns(2)
+
+                # Gráfico 1 (Ativo Vendido)
+                with col5:
+                    plt.figure(figsize=(10, 4))
+                    plt.plot(desempenho_vendido.index, desempenho_vendido.values, color='blue')
+                    plt.title(
+                        f"Desempenho do Ativo Vendido ({ativo_venda})\n"
+                        f"(5 dias antes do início da operação até a última cotação) – Par: {ativo_compra}"
+                    )
+                    plt.xlabel("Data")
+                    plt.ylabel("Preço")
+                    plt.grid(False)  # remove a grade de fundo
+                    st.pyplot(plt)
+
+                # Gráfico 2 (Ativo Comprado)
+                with col6:
+                    plt.figure(figsize=(10, 4))
+                    plt.plot(desempenho_comprado.index, desempenho_comprado.values, color='red')
+                    plt.title(
+                        f"Desempenho do Ativo Comprado ({ativo_compra})\n"
+                        f"(5 dias antes do início da operação até a última cotação) – Par: {ativo_venda}"
+                    )
+                    plt.xlabel("Data")
+                    plt.ylabel("Preço")
+                    plt.grid(False)  # remove a grade de fundo
+                    st.pyplot(plt)
+
+
 
             # Exibir tabela consolidada
             st.markdown("---")
@@ -840,7 +907,7 @@ if selected == "Operações":
                 st.dataframe(posicao_atual_df)
             else:
                 st.warning("Nenhum dado disponível para a posição atual.")
-             
+
             # Calcular o saldo final
             saldo_final = sum([
                 (float(row["Lucro/Prejuízo"].replace('R$', '').replace(',', '').strip()))
@@ -850,10 +917,10 @@ if selected == "Operações":
             # Exibir o saldo final
             st.markdown("### Saldo Final Consolidado")
             st.markdown(f"<h3 style='text-align: center; color: blue;'>R$ {saldo_final:.2f}</h3>", unsafe_allow_html=True)
-     
 
         except Exception as e:
             st.error(f"Erro ao processar o arquivo: {e}")
+
 
 
 
