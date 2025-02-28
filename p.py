@@ -50,7 +50,6 @@ def carregar_icone(ticker):
         return None
 
 
-
 # Função para calcular Half-Life
 def half_life_calc(ts):
     lagged = ts.shift(1).fillna(method="bfill")
@@ -125,6 +124,12 @@ def plotar_beta_movel(S1, S2, window=40):
         plt.legend()
         plt.xticks(rotation=45, fontsize=6)
         plt.grid(True)
+
+        # Reduzir a quantidade de rótulos no eixo X
+        ax = plt.gca()             # Pega o axis atual
+        ticks = ax.get_xticks()    # Pega os ticks atuais
+        ax.set_xticks(ticks[::5])  # Exibe somente 1 a cada 5
+
         st.pyplot(plt)
     except Exception as e:
         st.error(f"Erro ao calcular ou plotar o beta móvel: {e}")
@@ -424,6 +429,9 @@ if selected == "Cotações":
     else:
         st.warning("Nenhuma cotação foi carregada ainda.")
 
+
+
+
 if selected == "Análise":
     st.title("Análise de Cointegração de Ações")
 
@@ -484,31 +492,48 @@ if selected == "Análise":
 
                 with col1:
                     st.subheader("Z-Score do Par")
-                    plt.figure(figsize=(10, 5))
-                    plt.plot(zscore_series, label='Z-Score')
-                    plt.axhline(0, color='black', linestyle='--')
-                    plt.axhline(2, color='red', linestyle='--')
-                    plt.axhline(-2, color='green', linestyle='--')
-                    plt.axhline(3, color='orange', linestyle='--', label='+3 Desvio (Stop)')
-                    plt.axhline(-3, color='orange', linestyle='--', label='-3 Desvio (Stop)')
-                    plt.legend(loc='best')
-                    plt.xlabel('Data')
-                    plt.ylabel('Z-Score')
+                    # Cria a figura e o eixo
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(zscore_series, label='Z-Score')
+                    ticks = ax.get_xticks()  
+                    ax.set_xticks(ticks[::5])
+                    ax.axhline(0, color='black', linestyle='--')
+                    ax.axhline(2, color='red', linestyle='--')
+                    ax.axhline(-2, color='green', linestyle='--')
+                    ax.axhline(3, color='orange', linestyle='--', label='+3 Desvio (Stop)')
+                    ax.axhline(-3, color='orange', linestyle='--', label='-3 Desvio (Stop)')
+                    ax.legend(loc='best')
+                    ax.set_xlabel('Data')
+                    ax.set_ylabel('Z-Score')
+
+                    # Rotaciona e diminui o tamanho das labels do eixo X
                     plt.xticks(rotation=45, fontsize=6)
-                    plt.grid(True)
-                    st.pyplot(plt)
+
+                    ax.grid(True)
+
+                    # Ajusta automaticamente o layout para evitar sobreposições
+                    fig.tight_layout()
+
+                    # Exibe no Streamlit
+                    st.pyplot(fig)
 
                 with col2:
                     st.subheader("Cotação Normalizada")
-                    plt.figure(figsize=(10, 5))
-                    plt.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
-                    plt.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
-                    plt.legend(loc='best')
-                    plt.xlabel('Data')
-                    plt.ylabel('Cotação Normalizada')
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
+                    ax.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.set_xticks(ticks[::5])
+                    ax.plot(zscore_series, label='Z-Score')
+                    ax.legend(loc='best')
+                    ax.set_xlabel('Data')
+                    ax.set_ylabel('Cotação Normalizada')
+
                     plt.xticks(rotation=45, fontsize=6)
-                    plt.grid(True)
-                    st.pyplot(plt)
+                    ax.grid(True)
+
+                    fig.tight_layout()
+                    st.pyplot(fig)
 
                 col3, col4 = st.columns(2)
 
@@ -545,32 +570,147 @@ if selected == "Análise":
 
                     col1, col2 = st.columns(2)
 
+                    # =========================================
+                    # Coluna 1: Ação Vendida (Short)
+                    # =========================================
                     with col1:
                         st.subheader(f"Vender Ação: {stock_to_sell}")
-                        venda_quantidade = st.number_input("Quantidade para Vender", min_value=100, step=100, value=100, key="venda_quantidade")
+
+                        venda_quantidade = st.number_input(
+                            "Quantidade para Vender", 
+                            min_value=100, 
+                            step=100, 
+                            value=100, 
+                            key="venda_quantidade"
+                        )
                         venda_preco_atual = sell_price
                         venda_total = venda_quantidade * venda_preco_atual
+                        
                         st.write(f"Preço Atual: R$ {venda_preco_atual:.2f}")
                         st.write(f"Total Venda: R$ {venda_total:.2f}")
 
+                        # Slider de 0 a 25% de variação
+                        slider_venda = st.slider(
+                            "Movimento (%)", 
+                            min_value=0, 
+                            max_value=25, 
+                            value=5, 
+                            step=1, 
+                            key="slider_venda"
+                        )
+                        st.write(f"Simulação de {slider_venda}%")
+
+                        # -------------------------------------------------
+                        # Cenário 1: Se o preço CAIR X% => LUCRO no Short
+                        # -------------------------------------------------
+                        novo_preco_caindo = venda_preco_atual * (1 - slider_venda / 100)
+                        lucro_short = (venda_preco_atual - novo_preco_caindo) * venda_quantidade
+
+                        # -------------------------------------------------
+                        # Cenário 2: Se o preço SUBIR X% => PREJUÍZO no Short
+                        # -------------------------------------------------
+                        novo_preco_subindo = venda_preco_atual * (1 + slider_venda / 100)
+                        preju_short = (venda_preco_atual - novo_preco_subindo) * venda_quantidade
+
+                        # ================== Métricas =====================
+                        st.metric(
+                            label=f"Queda de {slider_venda}% (Lucro Short)", 
+                            value=f"R$ {novo_preco_caindo:.2f}",
+                            delta=round(lucro_short, 2)
+                        )
+                        st.metric(
+                            label=f"Alta de {slider_venda}% (Prejuízo Short)", 
+                            value=f"R$ {novo_preco_subindo:.2f}",
+                            delta=round(preju_short, 2)
+                        )
+
+                    # =========================================
+                    # Coluna 2: Ação Comprada (Long)
+                    # =========================================
                     with col2:
                         st.subheader(f"Comprar Ação: {stock_to_buy}")
-                        compra_quantidade = st.number_input("Quantidade para Comprar", min_value=100, step=100, value=100, key="compra_quantidade")
+
+                        compra_quantidade = st.number_input(
+                            "Quantidade para Comprar", 
+                            min_value=100, 
+                            step=100, 
+                            value=100, 
+                            key="compra_quantidade"
+                        )
                         compra_preco_atual = buy_price
                         compra_total = compra_quantidade * compra_preco_atual
+                        
                         st.write(f"Preço Atual: R$ {compra_preco_atual:.2f}")
                         st.write(f"Total Compra: R$ {compra_total:.2f}")
 
-                    resultado_total = venda_total - compra_total
-                    # Definir cor com base no resultado total
-                    cor_resultado = "blue" if resultado_total >= 0 else "red"
+                        slider_compra = st.slider(
+                            "Movimento (%)", 
+                            min_value=0, 
+                            max_value=25, 
+                            value=5, 
+                            step=1, 
+                            key="slider_compra"
+                        )
+                        st.write(f"Simulação de {slider_compra}%")
 
-                    # Exibir o resultado total com cor dinâmica
-                    st.markdown(
-                        f"<h3 style='text-align: center; color: {cor_resultado};'>"
-                        f"Resultado Total da Operação: R$ {resultado_total:.2f}"
-                        f"</h3>", 
-                        unsafe_allow_html=True)
+                        # -------------------------------------------------
+                        # Cenário 1: Se o preço SUBIR X% => LUCRO no Long
+                        # -------------------------------------------------
+                        novo_preco_subindo_long = compra_preco_atual * (1 + slider_compra / 100)
+                        lucro_long = (novo_preco_subindo_long - compra_preco_atual) * compra_quantidade
+
+                        # -------------------------------------------------
+                        # Cenário 2: Se o preço CAIR X% => PREJUÍZO no Long
+                        # -------------------------------------------------
+                        novo_preco_caindo_long = compra_preco_atual * (1 - slider_compra / 100)
+                        preju_long = (novo_preco_caindo_long - compra_preco_atual) * compra_quantidade
+
+                        # ================== Métricas =====================
+                        st.metric(
+                            label=f"Alta de {slider_compra}% (Lucro Long)", 
+                            value=f"R$ {novo_preco_subindo_long:.2f}",
+                            delta=round(lucro_long, 2)
+                        )
+                        st.metric(
+                            label=f"Queda de {slider_compra}% (Prejuízo Long)", 
+                            value=f"R$ {novo_preco_caindo_long:.2f}",
+                            delta=round(preju_long, 2)
+                        )
+
+                    # =========================================
+                    # Soma de Prejuízos (Stop)
+                    # =========================================
+                    st.markdown("---")
+                    preju_total = preju_short + preju_long  # normalmente resulta em um valor negativo
+                    stop_delta = round(preju_total, 2)
+
+                    st.metric(
+                        label="STOP (Soma dos Prejuízos)",
+                        value=f"R$ {stop_delta:.2f}",
+                        delta=stop_delta
+                    )
+
+                    resultado_total = venda_total - compra_total
+
+                    # Texto explicativo
+                    explicacao = (
+                        "Este valor representa o **fluxo financeiro inicial** da operação de long & short. "
+                        "Se for positivo, você **recebe** esse montante ao montar a estratégia. "
+                        "Se for negativo, você precisa **investir** esse valor para abrir as posições."
+                    )
+
+                    # Monta a mensagem (em Markdown, por exemplo)
+                    mensagem = f"""
+                    **Fluxo Líquido da Operação: R$ {resultado_total:.2f}**  
+
+                    {explicacao}
+                    """
+
+                    if resultado_total >= 0:
+                        st.success(mensagem)
+                    else:
+                        st.error(mensagem)
+
 
                 st.markdown("---")
                 if st.button("Salvar Operação como Excel"):
@@ -797,8 +937,6 @@ if selected == "Operações":
                     plt.grid(True)
                     st.pyplot(plt)
 
-                # ======= Novos Gráficos de Desempenho (em duas colunas) =======
-                # Converter 5 dias antes da data_operacao
                 # ======= Novos Gráficos de Desempenho (em duas colunas) =======
                 # ======= Novos Gráficos de Desempenho (em duas colunas) =======
                 data_inicial = data_operacao - pd.Timedelta(days=5)
