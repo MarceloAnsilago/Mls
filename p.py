@@ -520,17 +520,23 @@ if selected == "Análise":
                 with col2:
                     st.subheader("Cotação Normalizada")
                     fig, ax = plt.subplots(figsize=(10, 5))
+
+                    # Plota os dois ativos normalizados
                     ax.plot(S1 / S1.iloc[0], label=f"{pair_selected[0]}")
                     ax.plot(S2 / S2.iloc[0], label=f"{pair_selected[1]}")
-                    fig, ax = plt.subplots(figsize=(10, 5))
-                    ax.set_xticks(ticks[::5])
-                    ax.plot(zscore_series, label='Z-Score')
+
+                    # Ajusta legendas e eixos
                     ax.legend(loc='best')
                     ax.set_xlabel('Data')
                     ax.set_ylabel('Cotação Normalizada')
-
-                    plt.xticks(rotation=45, fontsize=6)
                     ax.grid(True)
+
+                    # Rotaciona e diminui a fonte das datas
+                    plt.xticks(rotation=45, fontsize=6)
+
+                    # Reduz a quantidade de rótulos no eixo X
+                    ticks = ax.get_xticks()      # Pega os ticks atuais
+                    ax.set_xticks(ticks[::5])    # Exibe somente 1 a cada 5
 
                     fig.tight_layout()
                     st.pyplot(fig)
