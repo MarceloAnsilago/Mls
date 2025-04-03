@@ -1,4 +1,3 @@
-
 import pandas as pd
 import streamlit as st
 from streamlit_option_menu import option_menu
@@ -18,7 +17,7 @@ from sklearn.linear_model import LinearRegression
 import time
 import mplfinance as mpf               
 from io import BytesIO
-                  
+import base64                
 
 # Inicializando o estado global para as cotações
 if "global_cotacoes" not in st.session_state:
@@ -26,7 +25,7 @@ if "global_cotacoes" not in st.session_state:
 
 
 st.set_page_config(page_title="Gerenciamento de Ações", page_icon=":chart_with_upwards_trend:", layout="wide")
-logo_image = Image.open("logos/LogoApp.jpg")
+logo_image = Image.open("logos/LogoApp.png")
 
 # Função para carregar o ícone
 def carregar_icone(ticker):
@@ -309,7 +308,30 @@ with st.sidebar:
 
 # Aba "Ações Acompanhadas"
 if selected == "Página Inicial":
-    st.title("Ações Acompanhadas")
+    # st.title("Ações Acompanhadas")
+    
+    def get_base64(file_path):
+        with open(file_path, "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+
+    image_base64 = get_base64("logos/Ações_Acompanhadas.png")
+
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center;">
+            <img src="data:image/png;base64,{image_base64}" alt="Logo" style="height: 130px; margin-right: 10px;">
+            <h1 style="margin: 0;">Ações Acompanhadas</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+
+
+
+
 
     # Verificar se o DataFrame global tem dados
     if "global_cotacoes" in st.session_state and not st.session_state["global_cotacoes"].empty:
@@ -1064,7 +1086,3 @@ if selected == "Operações":
 
         except Exception as e:
             st.error(f"Erro ao processar o arquivo: {e}")
-
-
-
-
