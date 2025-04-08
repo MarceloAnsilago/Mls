@@ -242,32 +242,7 @@ def criar_card_metrica(nome_metrica, valor_metrica, descricao):
         """,
         unsafe_allow_html=True
     )
-# Função para obter o preço atual de uma ação usando yfinance
-def obter_preco_atual(ticker):
-    dados = yf.download(ticker, period="1d")  # Baixar o dado mais recente
-    if not dados.empty:
-        return dados['Close'].iloc[-1]  # Retornar o preço de fechamento mais recente
-    else:
-        return None
 
-# Função para plotar o gráfico do Z-Score
-def plotar_grafico_zscore(S1, S2):
-    ratios = S1 / S2
-    zscore_series = (ratios - ratios.mean()) / ratios.std()
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(zscore_series, label='Z-Score')
-    plt.axhline(0, color='black', linestyle='--')
-    plt.axhline(2, color='red', linestyle='--')
-    plt.axhline(-2, color='green', linestyle='--')
-    plt.legend(loc='best')
-    plt.xlabel('Data')
-    plt.ylabel('Z-Score')
-    plt.xticks(rotation=45, fontsize=6)
-    plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True, prune='both'))
-    st.pyplot(plt)
-
-# Função para exibir a métrica no formato de cartão
 
 def exibir_metrica_cartao(ticker, ultimo_preco, ultima_data, icone=None):
     icone_html = (
@@ -328,11 +303,6 @@ if selected == "Página Inicial":
     )
 
 
-
-
-
-
-
     # Verificar se o DataFrame global tem dados
     if "global_cotacoes" in st.session_state and not st.session_state["global_cotacoes"].empty:
         # DataFrame global com as cotações
@@ -374,7 +344,21 @@ if selected == "Página Inicial":
 
 # Aba de Cotações
 if selected == "Cotações":
-    st.title("Cotações de Ações")
+    def get_base64(file_path):
+     with open(os.path.abspath(file_path), "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+    image_base64 = get_base64("logos/cotacoes.png") 
+    
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center;">
+            <img src="data:image/png;base64,{image_base64}" alt="Cotação" style="height: 130px; margin-right: 10px;">
+            <h1 style="margin: 0;">Cotações de Ações</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Upload do arquivo TXT com tickers
     st.markdown("### Upload do Arquivo com Tickers")
@@ -451,6 +435,29 @@ if selected == "Cotações":
     else:
         st.warning("Nenhuma cotação foi carregada ainda.")
 
+def mostrar_fluxo_liquido(venda_total: float, compra_total: float) -> float:
+    """
+    Exibe o fluxo financeiro líquido da operação de long & short.
+
+    Retorna o valor do fluxo líquido para uso posterior.
+    """
+    resultado_total = venda_total - compra_total
+
+    mensagem = f"**Fluxo Líquido da Operação: R$ {resultado_total:.2f}**"
+    explicacao = (
+        "Este valor representa o fluxo financeiro inicial da operação de long & short. "
+        "Se for positivo, você recebe esse montante ao montar a estratégia. "
+        "Se for negativo, você precisa investir esse valor para abrir as posições."
+    )
+
+    if resultado_total >= 0:
+        st.success(mensagem)
+    else:
+        st.error(mensagem)
+
+    st.markdown(f"<p style='font-size: 14px; color: #666;'>{explicacao}</p>", unsafe_allow_html=True)
+
+    return resultado_total
 
 
 
@@ -488,9 +495,11 @@ if selected == "Análise":
         st.subheader("Pares Encontrados")
 
         # Encontrar pares cointegrados e calcular métricas
-        pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
-            cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
-        )
+        # Spinner enquanto os pares são analisados
+        with st.spinner("🔍 Analisando cointegração entre os ativos..."):
+            pairs, pvalues, zscores, half_lives, hursts, beta_rotations = find_cointegrated_pairs(
+                cotacoes_pivot, zscore_threshold_upper, zscore_threshold_lower
+            )
 
         if pairs:
             for idx, (pair, zscore, pvalue, hurst, beta, half_life) in enumerate(zip(pairs, zscores, pvalues, hursts, beta_rotations, half_lives)):
@@ -573,12 +582,111 @@ if selected == "Análise":
                     st.subheader(f"Dispersão entre {pair_selected[0]} e {pair_selected[1]}")
                     plotar_grafico_dispersao(S1, S2)
 
-                # Expander com a configuração da operação, agora com as colunas ajustadas de acordo com o Z-Score
+
+               # === Tabs adicionais antes do Expander ===
+               # Determina os ativos antes de usar nas abas
+                current_zscore = zscores[pairs.index(pair_selected)]
+                if current_zscore > 0:
+                    stock_to_sell = pair_selected[0]
+                    stock_to_buy = pair_selected[1]
+                else:
+                    stock_to_sell = pair_selected[1]
+                    stock_to_buy = pair_selected[0]
+
+
+
+
+                tab1, tab2 = st.tabs(["📐 Calcular Proporção", "📎 Outra Ação"])
+              
+                with tab1:
+                        with st.expander("📐 Cálculo da Proporção entre os Ativos", expanded=False):
+                            col1, col2 = st.columns(2)
+
+                            preco_venda = S1.iloc[-1]
+                            preco_compra = S2.iloc[-1]
+
+                            ativo_venda = stock_to_sell
+                            ativo_compra = stock_to_buy
+
+                            with col1:
+                                st.markdown(f"### 🔻 Vender (Short): `{ativo_venda}`")
+                                st.write(f"Preço atual de **{ativo_venda}**: R$ {preco_venda:.2f}")
+                                capital_maximo = st.number_input(
+                                    "Capital Total para Venda (R$)", 
+                                    min_value=100.0, 
+                                    value=25000.0, 
+                                    step=100.0
+                                )
+
+                            with col2:
+                                st.markdown(f"### 🔺 Comprar (Long): `{ativo_compra}`")
+                                st.write(f"Preço atual de **{ativo_compra}**: R$ {preco_compra:.2f}")
+
+                            st.markdown("---")
+                            st.subheader("📊 Melhor Proporção com Base no Limite de Venda")
+
+                            melhor_resultado = None
+
+                            # Calcula o máximo de lotes de venda dentro do capital informado
+                            max_lotes_venda = int(capital_maximo // (100 * preco_venda))
+
+                            for lotes_venda in range(1, max_lotes_venda + 1):
+                                total_venda = lotes_venda * 100 * preco_venda
+
+                                for lotes_compra in range(1, 100):
+                                    total_compra = lotes_compra * 100 * preco_compra
+                                    residuo = abs(total_venda - total_compra)
+
+                                    if melhor_resultado is None or residuo < melhor_resultado["residuo"]:
+                                        melhor_resultado = {
+                                            "lotes_venda": lotes_venda,
+                                            "lotes_compra": lotes_compra,
+                                            "total_venda": total_venda,
+                                            "total_compra": total_compra,
+                                            "residuo": residuo,
+                                            "fluxo_liquido": total_venda - total_compra
+                                        }
+
+                            if melhor_resultado:
+                                col1, col2 = st.columns(2)
+
+                                with col1:
+                                    st.markdown(f"### 🔻 Vender (Short) {ativo_venda}")
+                                    st.write(f"- Lotes de 100: **{melhor_resultado['lotes_venda']}**")
+                                    st.write(f"- Quantidade: **{melhor_resultado['lotes_venda'] * 100} ações**")
+                                    st.write(f"- Total Venda: R$ {melhor_resultado['total_venda']:.2f}")
+
+                                with col2:
+                                    st.markdown(f"### 🔺 Comprar (Long): `{ativo_compra}`")
+                                    st.write(f"- Lotes de 100: **{melhor_resultado['lotes_compra']}**")
+                                    st.write(f"- Quantidade: **{melhor_resultado['lotes_compra'] * 100} ações**")
+                                    st.write(f"- Total Compra: R$ {melhor_resultado['total_compra']:.2f}")
+
+                                st.markdown("---")
+                                fluxo = melhor_resultado['fluxo_liquido']
+                                if fluxo >= 0:
+                                    st.success(f"💰 Fluxo Inicial da Operação: R$ {fluxo:.2f}")
+                                else:
+                                    st.error(f"📉 Fluxo Inicial da Operação: R$ {fluxo:.2f}")
+
+                                st.markdown(f"📎 Resíduo Absoluto entre os valores: R$ {melhor_resultado['residuo']:.2f}")
+                            else:
+                                st.warning("❗ Nenhuma combinação de lotes encontrada.")
+
+
+
+
+                with tab2:
+                            st.subheader("📎 Correlação inversa")
+                            st.info("Conteúdo alternativo aqui se desejar adicionar algo.")
+
+
+
+
+
                 with st.expander("Configurar Operação", expanded=True):
-                    # Obtém o Z-Score do par selecionado
                     current_zscore = zscores[pairs.index(pair_selected)]
-                    
-                    # Define, de acordo com o Z-Score, qual ativo vender e qual comprar
+
                     if current_zscore > 0:
                         st.markdown(
                             f"**Legenda de Operação:** Com o Z-Score positivo ({current_zscore:.2f}), recomenda-se **VENDER {pair_selected[0]}** (ativo sobrevalorizado) e **COMPRAR {pair_selected[1]}** (ativo subvalorizado)."
@@ -595,151 +703,64 @@ if selected == "Análise":
                         stock_to_buy = pair_selected[0]
                         sell_price = S2.iloc[-1]
                         buy_price = S1.iloc[-1]
-
+                  
                     col1, col2 = st.columns(2)
 
-                    # =========================================
-                    # Coluna 1: Ação Vendida (Short)
-                    # =========================================
+                    # =========================
+                    # Coluna 1 - Ação Vendida
+                    # =========================
                     with col1:
                         st.subheader(f"Vender Ação: {stock_to_sell}")
-
-                        venda_quantidade = st.number_input(
-                            "Quantidade para Vender", 
-                            min_value=100, 
-                            step=100, 
-                            value=100, 
-                            key="venda_quantidade"
-                        )
+                        venda_quantidade = st.number_input("Quantidade para Vender", min_value=100, step=100, value=100, key="venda_quantidade")
                         venda_preco_atual = sell_price
                         venda_total = venda_quantidade * venda_preco_atual
-                        
+
                         st.write(f"Preço Atual: R$ {venda_preco_atual:.2f}")
                         st.write(f"Total Venda: R$ {venda_total:.2f}")
-
-                        # Slider de 0 a 25% de variação
-                        slider_venda = st.slider(
-                            "Movimento (%)", 
-                            min_value=0, 
-                            max_value=25, 
-                            value=5, 
-                            step=1, 
-                            key="slider_venda"
-                        )
+                        
+                        slider_venda = st.slider("Movimento (%)", min_value=0, max_value=25, value=5, step=1, key="slider_venda")
                         st.write(f"Simulação de {slider_venda}%")
 
-                        # -------------------------------------------------
-                        # Cenário 1: Se o preço CAIR X% => LUCRO no Short
-                        # -------------------------------------------------
                         novo_preco_caindo = venda_preco_atual * (1 - slider_venda / 100)
                         lucro_short = (venda_preco_atual - novo_preco_caindo) * venda_quantidade
 
-                        # -------------------------------------------------
-                        # Cenário 2: Se o preço SUBIR X% => PREJUÍZO no Short
-                        # -------------------------------------------------
                         novo_preco_subindo = venda_preco_atual * (1 + slider_venda / 100)
                         preju_short = (venda_preco_atual - novo_preco_subindo) * venda_quantidade
 
-                        # ================== Métricas =====================
-                        st.metric(
-                            label=f"Queda de {slider_venda}% (Lucro Short)", 
-                            value=f"R$ {novo_preco_caindo:.2f}",
-                            delta=round(lucro_short, 2)
-                        )
-                        st.metric(
-                            label=f"Alta de {slider_venda}% (Prejuízo Short)", 
-                            value=f"R$ {novo_preco_subindo:.2f}",
-                            delta=round(preju_short, 2)
-                        )
+                        st.metric(f"Queda de {slider_venda}% (Lucro Short)", f"R$ {novo_preco_caindo:.2f}", delta=round(lucro_short, 2))
+                        st.metric(f"Alta de {slider_venda}% (Prejuízo Short)", f"R$ {novo_preco_subindo:.2f}", delta=round(preju_short, 2))
 
-                    # =========================================
-                    # Coluna 2: Ação Comprada (Long)
-                    # =========================================
+                    # =========================
+                    # Coluna 2 - Ação Comprada
+                    # =========================
                     with col2:
                         st.subheader(f"Comprar Ação: {stock_to_buy}")
-
-                        compra_quantidade = st.number_input(
-                            "Quantidade para Comprar", 
-                            min_value=100, 
-                            step=100, 
-                            value=100, 
-                            key="compra_quantidade"
-                        )
+                        compra_quantidade = st.number_input("Quantidade para Comprar", min_value=100, step=100, value=100, key="compra_quantidade")
                         compra_preco_atual = buy_price
                         compra_total = compra_quantidade * compra_preco_atual
-                        
+
                         st.write(f"Preço Atual: R$ {compra_preco_atual:.2f}")
                         st.write(f"Total Compra: R$ {compra_total:.2f}")
 
-                        slider_compra = st.slider(
-                            "Movimento (%)", 
-                            min_value=0, 
-                            max_value=25, 
-                            value=5, 
-                            step=1, 
-                            key="slider_compra"
-                        )
+                        slider_compra = st.slider("Movimento (%)", min_value=0, max_value=25, value=5, step=1, key="slider_compra")
                         st.write(f"Simulação de {slider_compra}%")
 
-                        # -------------------------------------------------
-                        # Cenário 1: Se o preço SUBIR X% => LUCRO no Long
-                        # -------------------------------------------------
                         novo_preco_subindo_long = compra_preco_atual * (1 + slider_compra / 100)
                         lucro_long = (novo_preco_subindo_long - compra_preco_atual) * compra_quantidade
 
-                        # -------------------------------------------------
-                        # Cenário 2: Se o preço CAIR X% => PREJUÍZO no Long
-                        # -------------------------------------------------
                         novo_preco_caindo_long = compra_preco_atual * (1 - slider_compra / 100)
                         preju_long = (novo_preco_caindo_long - compra_preco_atual) * compra_quantidade
 
-                        # ================== Métricas =====================
-                        st.metric(
-                            label=f"Alta de {slider_compra}% (Lucro Long)", 
-                            value=f"R$ {novo_preco_subindo_long:.2f}",
-                            delta=round(lucro_long, 2)
-                        )
-                        st.metric(
-                            label=f"Queda de {slider_compra}% (Prejuízo Long)", 
-                            value=f"R$ {novo_preco_caindo_long:.2f}",
-                            delta=round(preju_long, 2)
-                        )
-
-                    # =========================================
-                    # Soma de Prejuízos (Stop)
-                    # =========================================
+                        st.metric(f"Alta de {slider_compra}% (Lucro Long)", f"R$ {novo_preco_subindo_long:.2f}", delta=round(lucro_long, 2))
+                        st.metric(f"Queda de {slider_compra}% (Prejuízo Long)", f"R$ {novo_preco_caindo_long:.2f}", delta=round(preju_long, 2))
+                    resultado_total = mostrar_fluxo_liquido(venda_total, compra_total)
                     st.markdown("---")
-                    preju_total = preju_short + preju_long  # normalmente resulta em um valor negativo
-                    stop_delta = round(preju_total, 2)
+                    preju_total = preju_short + preju_long
+                    st.metric("STOP (Soma dos Prejuízos)", f"R$ {preju_total:.2f}", delta=round(preju_total, 2))
 
-                    st.metric(
-                        label="STOP (Soma dos Prejuízos)",
-                        value=f"R$ {stop_delta:.2f}",
-                        delta=stop_delta
-                    )
+         
 
-                    resultado_total = venda_total - compra_total
-
-                    # Texto explicativo
-                    explicacao = (
-                        "Este valor representa o **fluxo financeiro inicial** da operação de long & short. "
-                        "Se for positivo, você **recebe** esse montante ao montar a estratégia. "
-                        "Se for negativo, você precisa **investir** esse valor para abrir as posições."
-                    )
-
-                    # Monta a mensagem (em Markdown, por exemplo)
-                    mensagem = f"""
-                    **Fluxo Líquido da Operação: R$ {resultado_total:.2f}**  
-
-                    {explicacao}
-                    """
-
-                    if resultado_total >= 0:
-                        st.success(mensagem)
-                    else:
-                        st.error(mensagem)
-
-
+ 
                 st.markdown("---")
                 if st.button("Salvar Operação como Excel"):
                     operacao_data = {
