@@ -462,7 +462,22 @@ def mostrar_fluxo_liquido(venda_total: float, compra_total: float) -> float:
 
 
 if selected == "Análise":
-    st.title("Análise de Cointegração de Ações")
+   
+    def get_base64(file_path):
+     with open(os.path.abspath(file_path), "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+    image_base64 = get_base64("logos/analise.png") 
+    
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center;">
+            <img src="data:image/png;base64,{image_base64}" alt="Cotação" style="height: 130px; margin-right: 10px;">
+            <h1 style="margin: 0;">Análise de Cointegração de Ações</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Seleção de parâmetros para análise
     with st.form(key='analysis_form'):
@@ -595,7 +610,7 @@ if selected == "Análise":
 
 
       
-                tab1, tab2 = st.tabs(["📐 Calcular Proporção", "📎 Outra Ação"])
+                tab1, tab2 = st.tabs(["📐 Calcular Proporção", "📎 Correlação inversa"])
 
                 with tab1:
                     with st.expander("📐 Cálculo da Proporção entre os Ativos", expanded=False):
@@ -679,8 +694,51 @@ if selected == "Análise":
 
 
                 with tab2:
-                            st.subheader("📎 Correlação inversa")
-                            st.info("Conteúdo alternativo aqui se desejar adicionar algo.")
+                    st.subheader("📎 Correlação Inversa (Z-Score Invertido)")
+                    st.info("📌 Este gráfico mostra o comportamento do par **invertido**, onde agora consideramos o ativo que estava sendo comprado como vendido e vice-versa.")
+
+                    # Inversão dos ativos
+                    S_inv_1 = S2  # Antes comprado
+                    S_inv_2 = S1  # Antes vendido
+
+                    stock_to_sell = pair_selected[1]  # Agora vendemos o que antes comprávamos
+                    stock_to_buy = pair_selected[0]   # Compramos o que antes vendíamos
+
+                    ratio_inv = S_inv_1 / S_inv_2
+                    zscore_inv = (ratio_inv - ratio_inv.mean()) / ratio_inv.std()
+
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(zscore_inv, label="Z-Score Inverso")
+                    ax.axhline(0, color='black', linestyle='--')
+                    ax.axhline(2, color='red', linestyle='--', label='+2')
+                    ax.axhline(-2, color='green', linestyle='--', label='-2')
+                    ax.axhline(3, color='orange', linestyle='--', label='+3 (Stop)')
+                    ax.axhline(-3, color='orange', linestyle='--', label='-3 (Stop)')
+                    ax.set_title(f"Inversão: {stock_to_sell} / {stock_to_buy}")
+                    ax.set_ylabel("Z-Score Inverso")
+                    ax.legend()
+                    ax.grid(True)
+                    st.pyplot(fig)
+
+                    # Simulação com ativos invertidos
+                    st.markdown("---")
+                    st.info("📌 Este gráfico mostra o comportamento do par **invertido**, onde agora consideramos o ativo que estava sendo comprado como vendido e vice-versa.")
+                    st.markdown("### Configurar Operação")
+
+                    current_zscore_inv = zscore_inv.iloc[-1]
+
+                    if current_zscore_inv > 0:
+                        st.markdown(f"**Legenda de Operação:** Com o Z-Score positivo ({current_zscore_inv:.2f}), recomenda-se **VENDER {stock_to_sell}** e **COMPRAR {stock_to_buy}**.")
+                        sell_price = S_inv_1.iloc[-1]
+                        buy_price = S_inv_2.iloc[-1]
+                    else:
+                        st.markdown(f"**Legenda de Operação:** Com o Z-Score negativo ({current_zscore_inv:.2f}), recomenda-se **VENDER {stock_to_buy}** e **COMPRAR {stock_to_sell}**.")
+                        # inverte os papéis
+                        stock_to_sell, stock_to_buy = stock_to_buy, stock_to_sell
+                        sell_price = S_inv_2.iloc[-1]
+                        buy_price = S_inv_1.iloc[-1]
+
+                    # Aqui você pode continuar com os controles de simulação iguais ao da aba 1
 
 
 
