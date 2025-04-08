@@ -594,84 +594,86 @@ if selected == "Análise":
                     stock_to_buy = pair_selected[0]
 
 
-
-
+      
                 tab1, tab2 = st.tabs(["📐 Calcular Proporção", "📎 Outra Ação"])
-              
+
                 with tab1:
-                        with st.expander("📐 Cálculo da Proporção entre os Ativos", expanded=False):
-                            col1, col2 = st.columns(2)
+                    with st.expander("📐 Cálculo da Proporção entre os Ativos", expanded=False):
 
-                            preco_venda = S1.iloc[-1]
-                            preco_compra = S2.iloc[-1]
+                        # Dados atualizados com base nos papéis selecionados
+                        preco_venda = cotacoes_pivot[stock_to_sell].iloc[-1]
+                        preco_compra = cotacoes_pivot[stock_to_buy].iloc[-1]
+                        ativo_venda = stock_to_sell
+                        ativo_compra = stock_to_buy
 
-                            ativo_venda = stock_to_sell
-                            ativo_compra = stock_to_buy
+                        # Colunas superiores com preços e entrada de capital
+                        col_precos1, col_precos2 = st.columns(2)
 
-                            with col1:
+                        with col_precos1:
+                            st.markdown(f"### 🔻 Vender (Short): `{ativo_venda}`")
+                            st.write(f"Preço atual de **{ativo_venda}**: R$ {preco_venda:.2f}")
+                            capital_maximo = st.number_input(
+                                "Capital Total para Venda (R$)",
+                                min_value=100.0,
+                                value=25000.0,
+                                step=100.0,
+                                help="Limite de capital disponível para definir o máximo de lotes de venda"
+                            )
+
+                        with col_precos2:
+                            st.markdown(f"### 🔺 Comprar (Long): `{ativo_compra}`")
+                            st.write(f"Preço atual de **{ativo_compra}**: R$ {preco_compra:.2f}")
+
+                        st.markdown("---")
+                        st.subheader("📊 Melhor Proporção com Base no Limite de Venda")
+
+                        melhor_resultado = None
+                        max_lotes_venda = int(capital_maximo // (100 * preco_venda))
+
+                        for lotes_venda in range(1, max_lotes_venda + 1):
+                            total_venda = lotes_venda * 100 * preco_venda
+
+                            for lotes_compra in range(1, 100):
+                                total_compra = lotes_compra * 100 * preco_compra
+                                residuo = abs(total_venda - total_compra)
+
+                                if melhor_resultado is None or residuo < melhor_resultado["residuo"]:
+                                    melhor_resultado = {
+                                        "lotes_venda": lotes_venda,
+                                        "lotes_compra": lotes_compra,
+                                        "total_venda": total_venda,
+                                        "total_compra": total_compra,
+                                        "residuo": residuo,
+                                        "fluxo_liquido": total_venda - total_compra
+                                    }
+
+                        if melhor_resultado:
+                            col_result1, col_result2 = st.columns(2)
+
+                            with col_result1:
                                 st.markdown(f"### 🔻 Vender (Short): `{ativo_venda}`")
-                                st.write(f"Preço atual de **{ativo_venda}**: R$ {preco_venda:.2f}")
-                                capital_maximo = st.number_input(
-                                    "Capital Total para Venda (R$)", 
-                                    min_value=100.0, 
-                                    value=25000.0, 
-                                    step=100.0
-                                )
+                                st.write(f"- Lotes de 100: **{melhor_resultado['lotes_venda']}**")
+                                st.write(f"- Quantidade: **{melhor_resultado['lotes_venda'] * 100} ações**")
+                                st.write(f"- Total Venda: R$ {melhor_resultado['total_venda']:.2f}")
 
-                            with col2:
+                            with col_result2:
                                 st.markdown(f"### 🔺 Comprar (Long): `{ativo_compra}`")
-                                st.write(f"Preço atual de **{ativo_compra}**: R$ {preco_compra:.2f}")
+                                st.write(f"- Lotes de 100: **{melhor_resultado['lotes_compra']}**")
+                                st.write(f"- Quantidade: **{melhor_resultado['lotes_compra'] * 100} ações**")
+                                st.write(f"- Total Compra: R$ {melhor_resultado['total_compra']:.2f}")
 
                             st.markdown("---")
-                            st.subheader("📊 Melhor Proporção com Base no Limite de Venda")
+                            fluxo = melhor_resultado['fluxo_liquido']
 
-                            melhor_resultado = None
-
-                            # Calcula o máximo de lotes de venda dentro do capital informado
-                            max_lotes_venda = int(capital_maximo // (100 * preco_venda))
-
-                            for lotes_venda in range(1, max_lotes_venda + 1):
-                                total_venda = lotes_venda * 100 * preco_venda
-
-                                for lotes_compra in range(1, 100):
-                                    total_compra = lotes_compra * 100 * preco_compra
-                                    residuo = abs(total_venda - total_compra)
-
-                                    if melhor_resultado is None or residuo < melhor_resultado["residuo"]:
-                                        melhor_resultado = {
-                                            "lotes_venda": lotes_venda,
-                                            "lotes_compra": lotes_compra,
-                                            "total_venda": total_venda,
-                                            "total_compra": total_compra,
-                                            "residuo": residuo,
-                                            "fluxo_liquido": total_venda - total_compra
-                                        }
-
-                            if melhor_resultado:
-                                col1, col2 = st.columns(2)
-
-                                with col1:
-                                    st.markdown(f"### 🔻 Vender (Short) {ativo_venda}")
-                                    st.write(f"- Lotes de 100: **{melhor_resultado['lotes_venda']}**")
-                                    st.write(f"- Quantidade: **{melhor_resultado['lotes_venda'] * 100} ações**")
-                                    st.write(f"- Total Venda: R$ {melhor_resultado['total_venda']:.2f}")
-
-                                with col2:
-                                    st.markdown(f"### 🔺 Comprar (Long): `{ativo_compra}`")
-                                    st.write(f"- Lotes de 100: **{melhor_resultado['lotes_compra']}**")
-                                    st.write(f"- Quantidade: **{melhor_resultado['lotes_compra'] * 100} ações**")
-                                    st.write(f"- Total Compra: R$ {melhor_resultado['total_compra']:.2f}")
-
-                                st.markdown("---")
-                                fluxo = melhor_resultado['fluxo_liquido']
-                                if fluxo >= 0:
-                                    st.success(f"💰 Fluxo Inicial da Operação: R$ {fluxo:.2f}")
-                                else:
-                                    st.error(f"📉 Fluxo Inicial da Operação: R$ {fluxo:.2f}")
-
-                                st.markdown(f"📎 Resíduo Absoluto entre os valores: R$ {melhor_resultado['residuo']:.2f}")
+                            if fluxo >= 0:
+                                st.success(f"💰 Fluxo Inicial da Operação: R$ {fluxo:.2f}")
                             else:
-                                st.warning("❗ Nenhuma combinação de lotes encontrada.")
+                                st.error(f"📉 Fluxo Inicial da Operação: R$ {fluxo:.2f}")
+
+                            st.markdown(f"📎 Resíduo Absoluto entre os valores: R$ {melhor_resultado['residuo']:.2f}")
+                        else:
+                            st.warning("❗ Nenhuma combinação de lotes encontrada.")
+
 
 
 
